@@ -66,6 +66,13 @@ export default function App() {
   const [guide, setGuide] = useState("문제를 고르고 노트에 풀이를 시작하세요. 막히는 순간 오른쪽 버튼으로 힌트를 받을 수 있습니다.");
   const [guideLoading, setGuideLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [reviewCounts, setReviewCounts] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("study-review-counts") || "{}");
+    } catch {
+      return {};
+    }
+  });
   const [solvedBySkill, setSolvedBySkill] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem("study-solved-by-skill") || "{}");
@@ -117,6 +124,10 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    localStorage.setItem("study-review-counts", JSON.stringify(reviewCounts));
+  }, [reviewCounts]);
+
+  useEffect(() => {
     if (!user) return;
     loadProblemsBySkill(selectedSkillId)
       .then((items) => {
@@ -153,6 +164,30 @@ export default function App() {
   }
 
   async function handleGuide(action) {
+    if (action.key === "next") {
+      setGuide(selectedProblem.nextStep || `## 다음 한 단계\n- ${selectedProblem.concept}`);
+      return;
+    }
+
+    if (action.key === "hint") {
+      setGuide(selectedProblem.hint || `## 힌트\n- ${selectedProblem.concept}`);
+      return;
+    }
+
+    if (action.key === "concept") {
+      setGuide(selectedProblem.conceptGuide || `## 개념 다시보기\n- ${selectedProblem.concept}`);
+      return;
+    }
+
+    if (action.key !== "check") return;
+
+    const reviewKey = `${selectedProblem.id}`;
+    const usedCount = reviewCounts[reviewKey] || 0;
+    if (usedCount >= 3) {
+      setGuide("## 내 풀이 점검 제한\n- 이 문제의 풀이 점검은 최대 3회까지 사용할 수 있습니다.\n- 힌트와 개념 다시보기를 참고해서 다시 정리해 보세요.");
+      return;
+    }
+
     setGuideLoading(true);
     setGuide(`${action.label} 요청 중...`);
     try {
@@ -168,6 +203,7 @@ export default function App() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "OpenAI guide failed");
       setGuide(data.guide);
+      setReviewCounts((current) => ({ ...current, [reviewKey]: usedCount + 1 }));
     } catch (error) {
       setGuide(
         `가이드 API 연결 전 임시 안내입니다.\n\n${selectedProblem.concept}\n\n다음 단계: 문제에서 주어진 값과 구해야 할 값을 먼저 분리한 뒤, 가장 직접적인 공식이나 등식으로 옮겨 보세요.\n\n오류: ${error.message}`,
@@ -298,6 +334,7 @@ export default function App() {
           problem={selectedProblem}
           guide={guide}
           guideLoading={guideLoading}
+          reviewCount={reviewCounts[selectedProblem.id] || 0}
           saving={saving}
           onGuide={handleGuide}
           onSave={handleSaveAttempt}
@@ -732,7 +769,7 @@ function ProblemAssets({ assets }) {
   );
 }
 
-function GuidePanel({ problem, guide, guideLoading, saving, onGuide, onSave }) {
+function GuidePanel({ problem, guide, guideLoading, reviewCount, saving, onGuide, onSave }) {
   return (
     <aside className="guide-panel">
       <div className="section-title">
@@ -747,6 +784,7 @@ function GuidePanel({ problem, guide, guideLoading, saving, onGuide, onSave }) {
             <button key={action.key} onClick={() => onGuide(action)} disabled={guideLoading}>
               <Icon size={17} />
               {action.label}
+              {action.key === "check" && <small>{Math.max(0, 3 - reviewCount)}/3</small>}
             </button>
           );
         })}

@@ -39,15 +39,15 @@ export async function ensureUserProfile(user) {
 export async function seedCatalogIfNeeded() {
   const markerRef = doc(db, "system", "catalog");
   const marker = await getDoc(markerRef);
-  if (marker.exists() && marker.data()?.version >= 3) return;
+  if (marker.exists() && marker.data()?.version >= 4) return;
 
   await Promise.all([
     ...curriculumNodes.map((node) => setDoc(doc(db, "skills", node.id), node)),
     ...generatedProblems.map((problem) => setDoc(doc(db, "problems", problem.id), problem)),
     setDoc(markerRef, {
       seededAt: serverTimestamp(),
-      version: 3,
-      note: "Expanded catalog with 50 generated problems per skill.",
+      version: 4,
+      note: "Expanded catalog with 50 generated problems plus rich static hints and concept guides.",
     }),
   ]);
 }

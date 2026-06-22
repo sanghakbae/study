@@ -1,4 +1,4 @@
-import { curriculumNodes } from "./curriculum";
+import { curriculumNodes } from "./curriculum.js";
 
 export const generatedProblems = curriculumNodes.flatMap((skill) => generateProblemsForSkill(skill));
 
@@ -22,6 +22,9 @@ function buildProblem(skill, number) {
     sourceName: "내장 단원 문제은행",
     difficulty: Math.min(5, 1 + Math.floor((number - 1) / 12)),
     title: `${skill.title} ${number}`,
+    hint: buildHint(skill, built),
+    nextStep: buildNextStep(skill, built),
+    conceptGuide: buildConceptGuide(skill, built),
     ...built,
   };
 }
@@ -160,4 +163,66 @@ function reduceFraction(numerator, denominator) {
 
 function gcd(a, b) {
   return b === 0 ? Math.abs(a) : gcd(b, a % b);
+}
+
+function buildHint(skill, problem) {
+  return [
+    "## 힌트",
+    "### 1. 먼저 볼 것",
+    `- 단원: **${skill.stage} ${skill.title}**`,
+    "- 문제에서 **주어진 값**과 **구해야 하는 값**을 나눠 표시해.",
+    "",
+    "### 2. 적용할 생각",
+    `- ${problem.concept}`,
+    "- 계산을 시작하기 전에 괄호, 부호, 조건을 먼저 정리해.",
+    "",
+    "### 3. 직접 해볼 한 줄",
+    `- 원래 식/조건을 유지한 채, 바뀌는 부분만 한 번 고쳐 써 봐.`,
+    "- 아직 답까지 가지 말고 중간식까지만 만들어.",
+    "",
+    "### 자주 하는 실수",
+    "- 머릿속으로 한 번에 계산해서 중간 부호를 빠뜨리는 것.",
+    "- 괄호 안 부호와 괄호 밖 연산을 따로 보지 않는 것.",
+  ].join("\n");
+}
+
+function buildNextStep(skill, problem) {
+  return [
+    "## 다음 한 단계",
+    `- 지금 풀고 있는 단원은 **${skill.title}**이야.`,
+    `- 사용할 개념: ${problem.concept}`,
+    "",
+    "### 해야 할 일",
+    "- 식이나 조건을 그대로 다시 쓴다.",
+    "- 바뀌어야 하는 부호/항/공식 부분에 표시한다.",
+    "- 그 부분만 고쳐서 다음 줄에 중간식을 쓴다.",
+    "",
+    "### 멈출 지점",
+    "- 답을 바로 쓰지 말고, 중간식이 맞는지 먼저 확인해.",
+  ].join("\n");
+}
+
+function buildConceptGuide(skill, problem) {
+  return [
+    "## 개념 다시보기",
+    `### ${skill.stage} · ${skill.title}`,
+    `- 영역: **${skill.unit}**`,
+    `- 핵심 개념: ${problem.concept}`,
+    "",
+    "### 풀이 흐름",
+    "1. 문제의 조건을 수식이나 그림 정보로 옮긴다.",
+    "2. 이 단원에서 쓰는 규칙/공식을 한 줄로 적는다.",
+    "3. 값을 대입하고 한 단계씩 계산한다.",
+    "4. 마지막에 답이 문제에서 묻는 형태인지 확인한다.",
+    "",
+    "### 체크리스트",
+    "- 부호를 바꿔야 하는 곳이 있는가?",
+    "- 괄호를 풀 때 모든 항에 적용했는가?",
+    "- 분수/제곱/근호/확률의 조건을 빠뜨리지 않았는가?",
+    "- 중간식 없이 답만 쓰지 않았는가?",
+    "",
+    "### 공부 팁",
+    "- 같은 유형 3문제를 연속으로 풀어 규칙을 손에 익혀라.",
+    "- 틀린 문제는 계산 실수인지 개념 실수인지 분리해서 표시해라.",
+  ].join("\n");
 }

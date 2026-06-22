@@ -727,6 +727,12 @@ button:disabled {
   white-space: normal;
 }
 
+.guide-actions small {
+  margin-left: 4px;
+  color: #64748b;
+  font-size: 0.72rem;
+}
+
 .guide-output {
   min-height: 0;
   flex: 1;
