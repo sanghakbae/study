@@ -477,6 +477,7 @@ const NotebookPanel = forwardRef(function NotebookPanel(
 ) {
   const canvasRef = useRef(null);
   const cursorRef = useRef(null);
+  const ctxRef = useRef(null);
   const strokesRef = useRef([]);
   const drawingRef = useRef(false);
   const currentStrokeRef = useRef([]);
@@ -492,12 +493,16 @@ const NotebookPanel = forwardRef(function NotebookPanel(
     const canvas = canvasRef.current;
     const container = canvas.parentElement;
     const resize = () => {
-      const ratio = window.devicePixelRatio || 1;
+      const ratio = Math.min(window.devicePixelRatio || 1, 1.25);
       const rect = container.getBoundingClientRect();
-      canvas.width = Math.floor(rect.width * ratio);
-      canvas.height = Math.floor(rect.height * ratio);
+      const nextWidth = Math.floor(rect.width * ratio);
+      const nextHeight = Math.floor(rect.height * ratio);
+      if (canvas.width === nextWidth && canvas.height === nextHeight) return;
+      canvas.width = nextWidth;
+      canvas.height = nextHeight;
       canvas.style.width = `${rect.width}px`;
       canvas.style.height = `${rect.height}px`;
+      ctxRef.current = canvas.getContext("2d", { alpha: false, desynchronized: true });
       redraw();
     };
     resize();
@@ -552,9 +557,9 @@ const NotebookPanel = forwardRef(function NotebookPanel(
   }
 
   function drawStroke(stroke) {
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d");
     if (stroke.points.length < 2) return;
+    const ctx = ctxRef.current;
+    if (!ctx) return;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     ctx.strokeStyle = stroke.tool === "eraser" ? "#ffffff" : "#111827";
@@ -565,10 +570,24 @@ const NotebookPanel = forwardRef(function NotebookPanel(
     ctx.stroke();
   }
 
+  function drawSegment(from, to, strokeTool) {
+    const ctx = ctxRef.current;
+    if (!ctx || !from || !to) return;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = strokeTool === "eraser" ? "#ffffff" : "#111827";
+    ctx.lineWidth = strokeTool === "eraser" ? 30 : 3.5;
+    ctx.beginPath();
+    ctx.moveTo(from.x, from.y);
+    ctx.lineTo(to.x, to.y);
+    ctx.stroke();
+  }
+
   function redraw() {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext("2d");
+    const ctx = ctxRef.current || canvas.getContext("2d", { alpha: false, desynchronized: true });
+    ctxRef.current = ctx;
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     strokesRef.current.forEach(drawStroke);
@@ -594,18 +613,15 @@ const NotebookPanel = forwardRef(function NotebookPanel(
     updateCursor(event);
     if (!drawingRef.current) return;
     event.preventDefault();
-    const events = event.getCoalescedEvents?.() || [event];
-    for (const pointerEvent of events) {
-      const point = getPoint(pointerEvent);
-      const lastPoint = lastPointRef.current;
-      if (!lastPoint) {
-        lastPointRef.current = point;
-        continue;
-      }
-      currentStrokeRef.current.push(point);
-      drawStroke({ tool: toolRef.current, points: [lastPoint, point] });
+    const point = getPoint(event);
+    const lastPoint = lastPointRef.current;
+    if (!lastPoint) {
       lastPointRef.current = point;
+      return;
     }
+    currentStrokeRef.current.push(point);
+    drawSegment(lastPoint, point, toolRef.current);
+    lastPointRef.current = point;
   }
 
   function endDrawing(event) {
