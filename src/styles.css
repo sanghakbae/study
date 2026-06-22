@@ -1708,7 +1708,7 @@ li:nth-child(3) .rank-num { color: #b45309; }
   min-height: 0;
   flex: 1;
   overflow: auto;
-  padding: 14px;
+  padding: 5px;
   border-radius: 12px;
   background: #f8fafc;
   border: 1px solid #e8ecf3;
@@ -2025,7 +2025,7 @@ li:nth-child(3) .rank-num { color: #b45309; }
 
   .workspace {
     gap: 8px;
-    grid-template-columns: minmax(0, 78%) 8px minmax(0, 1fr) !important;
+    grid-template-columns: minmax(0, 78%) 8px minmax(0, 1fr);
   }
 
   .admin-layout,
@@ -2049,7 +2049,7 @@ li:nth-child(3) .rank-num { color: #b45309; }
   }
 
   .brand-block span {
-    font-size: 0.7rem;
+    font-size: 0.87rem;
   }
 
   .user-pill,

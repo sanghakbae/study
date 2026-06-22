@@ -497,7 +497,7 @@ export default function App() {
       <section
         className="workspace"
         ref={workspaceRef}
-        style={{ gridTemplateColumns: `minmax(0, ${noteRatio}%) 12px minmax(420px, 1fr)` }}
+        style={{ gridTemplateColumns: `minmax(0, ${noteRatio}%) 12px minmax(0, 1fr)` }}
       >
         <NotebookPanel
           ref={notebookRef}
@@ -1781,7 +1781,7 @@ function GuidePanel({ problem, guide, guideLoading, reviewCount, answerCheck, is
 
       <div className="tablet-note">
         <MousePointer2 size={16} />
-        Apple Pencil/S Pen/터치 입력에 맞춰 포인터 이벤트로 동작합니다.
+        펜·터치 입력 지원
       </div>
     </aside>
   );
