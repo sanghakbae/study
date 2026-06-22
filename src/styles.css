@@ -699,6 +699,99 @@ button:disabled {
   margin-bottom: 7px;
 }
 
+.member-table-wrap {
+  width: 100%;
+  overflow: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.member-table {
+  width: 100%;
+  min-width: 920px;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.member-table th,
+.member-table td {
+  padding: 8px;
+  border-bottom: 1px solid #e2e8f0;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.member-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 0.76rem;
+  font-weight: 950;
+}
+
+.member-table th:nth-child(1),
+.member-table td:nth-child(1) {
+  width: 240px;
+}
+
+.member-table th:nth-child(2),
+.member-table td:nth-child(2) {
+  width: 180px;
+}
+
+.member-table th:nth-child(3),
+.member-table td:nth-child(3) {
+  width: 92px;
+}
+
+.member-table th:nth-child(4),
+.member-table td:nth-child(4),
+.member-table th:nth-child(5),
+.member-table td:nth-child(5) {
+  width: 86px;
+}
+
+.member-table th:nth-child(6),
+.member-table td:nth-child(6) {
+  width: 130px;
+}
+
+.member-table th:nth-child(7),
+.member-table td:nth-child(7) {
+  width: 200px;
+}
+
+.member-table strong,
+.member-table small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.member-table small,
+.muted {
+  color: #64748b;
+  font-size: 0.74rem;
+}
+
+.member-table input,
+.member-table select {
+  width: 100%;
+  height: 32px;
+  min-width: 0;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  padding: 0 8px;
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
 .member-row strong,
 .member-row small,
 .child-card strong,
@@ -786,24 +879,6 @@ button:disabled {
 .child-card .negative {
   color: #b45309;
   font-weight: 900;
-}
-
-.member-edit-grid {
-  display: grid;
-  grid-template-columns: 1fr 0.8fr;
-  gap: 6px;
-}
-
-.member-row select,
-.member-row input {
-  width: 100%;
-  min-height: 34px;
-  border: 1px solid #cbd5e1;
-  border-radius: 8px;
-  background: #fff;
-  font-size: 0.78rem;
-  font-weight: 800;
-  padding: 0 8px;
 }
 
 .workspace {

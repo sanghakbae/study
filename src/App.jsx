@@ -747,56 +747,89 @@ function MemberManager({ members, onRoleUpdate }) {
   return (
     <div className="member-manager">
       <h3>회원 관리</h3>
-      {members.length ? members.slice(0, 12).map((member) => (
-        <div className="member-row" key={member.uid}>
-          <div>
-            <strong>{formatStudentName(member)}</strong>
-            <small>{member.email}</small>
-          </div>
-          <div className="member-edit-grid">
-            <input
-              defaultValue={member.displayName || ""}
-              onBlur={(event) => saveMember(member, { displayName: event.target.value })}
-              aria-label="학생 이름"
-            />
-            <input
-              defaultValue={member.grade || ""}
-              onBlur={(event) => saveMember(member, { grade: event.target.value })}
-              aria-label="등급"
-              placeholder="등급"
-            />
-            <input
-              type="number"
-              min="0"
-              defaultValue={member.xp || 0}
-              onBlur={(event) => saveMember(member, { xp: event.target.value })}
-              aria-label="XP"
-            />
-            <input
-              type="number"
-              min="0"
-              defaultValue={member.solvedCount || 0}
-              onBlur={(event) => saveMember(member, { solvedCount: event.target.value })}
-              aria-label="해결 수"
-            />
-          </div>
-          <select value={member.role || "student"} onChange={(event) => handleRoleChange(member, event.target.value)}>
-            <option value="student">student</option>
-            <option value="parents">parents</option>
-            <option value="admin">admin</option>
-          </select>
-          {(member.role || "student") === "parents" && (
-            <select value={member.parentOf?.[0] || ""} onChange={(event) => handleParentOfChange(member, event.target.value)}>
-              <option value="">학생 선택</option>
-              {students.map((student) => (
-                <option value={student.uid} key={student.uid}>
-                  {formatStudentName(student)}
-                </option>
+      {members.length ? (
+        <div className="member-table-wrap">
+          <table className="member-table">
+            <thead>
+              <tr>
+                <th>회원</th>
+                <th>이름</th>
+                <th>등급</th>
+                <th>XP</th>
+                <th>해결</th>
+                <th>권한</th>
+                <th>자녀</th>
+              </tr>
+            </thead>
+            <tbody>
+              {members.slice(0, 80).map((member) => (
+                <tr key={member.uid}>
+                  <td>
+                    <strong>{formatStudentName(member)}</strong>
+                    <small>{member.email}</small>
+                  </td>
+                  <td>
+                    <input
+                      defaultValue={member.displayName || ""}
+                      onBlur={(event) => saveMember(member, { displayName: event.target.value })}
+                      aria-label="학생 이름"
+                    />
+                  </td>
+                  <td>
+                    <input
+                      defaultValue={member.grade || ""}
+                      onBlur={(event) => saveMember(member, { grade: event.target.value })}
+                      aria-label="등급"
+                      placeholder="등급"
+                    />
+                  </td>
+                  <td>
+                    <input
+                      type="number"
+                      min="0"
+                      defaultValue={member.xp || 0}
+                      onBlur={(event) => saveMember(member, { xp: event.target.value })}
+                      aria-label="XP"
+                    />
+                  </td>
+                  <td>
+                    <input
+                      type="number"
+                      min="0"
+                      defaultValue={member.solvedCount || 0}
+                      onBlur={(event) => saveMember(member, { solvedCount: event.target.value })}
+                      aria-label="해결 수"
+                    />
+                  </td>
+                  <td>
+                    <select value={member.role || "student"} onChange={(event) => handleRoleChange(member, event.target.value)}>
+                      <option value="student">student</option>
+                      <option value="parents">parents</option>
+                      <option value="admin">admin</option>
+                    </select>
+                  </td>
+                  <td>
+                    {(member.role || "student") === "parents" ? (
+                      <select value={member.parentOf?.[0] || ""} onChange={(event) => handleParentOfChange(member, event.target.value)}>
+                        <option value="">선택 안함</option>
+                        {students.map((student) => (
+                          <option value={student.uid} key={student.uid}>
+                            {formatStudentName(student)}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span className="muted">-</span>
+                    )}
+                  </td>
+                </tr>
               ))}
-            </select>
-          )}
+            </tbody>
+          </table>
         </div>
-      )) : <p>아직 등록된 회원이 없습니다. admin 계정으로 로그인하면 목업 학생 5명이 자동 생성됩니다.</p>}
+      ) : (
+        <p>아직 등록된 회원이 없습니다. admin 계정으로 로그인하면 목업 학생 5명이 자동 생성됩니다.</p>
+      )}
     </div>
   );
 }
