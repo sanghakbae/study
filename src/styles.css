@@ -106,7 +106,7 @@ button:disabled {
   z-index: 1;
   color: #fff;
   text-align: center;
-  padding: 32px;
+  padding: 26px 32px;
   border: 1px solid rgba(255, 255, 255, 0.2);
   background: rgba(17, 24, 39, 0.72);
   backdrop-filter: blur(18px);
@@ -141,9 +141,9 @@ button:disabled {
 }
 
 .login-panel p {
-  margin: 18px 0 28px;
+  margin: 8px 0 18px;
   color: #d1d5db;
-  line-height: 1.65;
+  line-height: 1.35;
 }
 
 .google-button {
@@ -179,6 +179,50 @@ button:disabled {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(238, 242, 247, 0.96)),
     repeating-linear-gradient(90deg, transparent 0 42px, rgba(17, 24, 39, 0.03) 42px 43px);
+}
+
+.admin-shell,
+.parent-shell {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.admin-layout,
+.parent-layout {
+  min-height: 0;
+  display: grid;
+  gap: 12px;
+  overflow: hidden;
+}
+
+.admin-layout {
+  grid-template-columns: 300px minmax(0, 1fr) minmax(320px, 0.9fr);
+}
+
+.parent-layout {
+  grid-template-columns: minmax(360px, 1.1fr) 300px minmax(320px, 0.9fr);
+}
+
+.admin-panel {
+  min-height: 0;
+  overflow: auto;
+  padding: 10px;
+  border: 1px solid #d8dee8;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 16px 42px rgba(15, 23, 42, 0.08);
+}
+
+.admin-layout > .activity-panel,
+.parent-layout > .parent-insight,
+.parent-layout > .activity-panel {
+  min-height: 0;
+  overflow: auto;
+  margin-top: 0;
+  padding: 10px;
+  border: 1px solid #d8dee8;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 16px 42px rgba(15, 23, 42, 0.08);
 }
 
 .warning-bar {
@@ -534,6 +578,7 @@ button:disabled {
 }
 
 .member-manager,
+.parent-insight,
 .activity-panel {
   margin-top: 12px;
   padding-top: 12px;
@@ -541,12 +586,14 @@ button:disabled {
 }
 
 .member-manager h3,
+.parent-insight h3,
 .activity-panel h3 {
   margin: 0 0 8px;
   font-size: 0.92rem;
 }
 
 .member-row,
+.child-card,
 .activity-row {
   display: grid;
   gap: 6px;
@@ -558,6 +605,9 @@ button:disabled {
 
 .member-row strong,
 .member-row small,
+.child-card strong,
+.child-card span,
+.child-card small,
 .activity-row strong,
 .activity-row span,
 .activity-row small {
@@ -568,11 +618,29 @@ button:disabled {
 }
 
 .member-row small,
+.child-card span,
+.child-card small,
 .activity-row span,
 .activity-row small,
+.parent-insight p,
 .activity-panel p {
   color: #64748b;
   font-size: 0.75rem;
+}
+
+.comparison-grid {
+  display: grid;
+  gap: 4px;
+}
+
+.child-card .positive {
+  color: #0f766e;
+  font-weight: 900;
+}
+
+.child-card .negative {
+  color: #b45309;
+  font-weight: 900;
 }
 
 .member-edit-grid {

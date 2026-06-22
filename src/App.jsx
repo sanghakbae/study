@@ -324,34 +324,39 @@ export default function App() {
     return <LoginScreen onLogin={handleLogin} />;
   }
 
+  if (profile.role === "admin") {
+    return (
+      <AdminPage
+        user={user}
+        profile={profile}
+        leaders={leaderboard}
+        members={members}
+        attempts={activityAttempts}
+        onRoleUpdate={async (payload) => {
+          await updateUserRole(payload);
+          await refreshMembers();
+          await refreshCatalog();
+        }}
+      />
+    );
+  }
+
+  if (profile.role === "parents") {
+    return (
+      <ParentPage
+        user={user}
+        profile={profile}
+        members={members}
+        attempts={activityAttempts}
+        leaders={leaderboard}
+      />
+    );
+  }
+
   return (
     <main className="app-shell">
       {dataWarning && <div className="warning-bar">{dataWarning}</div>}
-      <header className="topbar">
-        <div className="brand-block">
-          <div className="brand-mark">
-            <Gamepad2 size={22} />
-          </div>
-          <div>
-            <strong>Study Math Arena</strong>
-            <span>중등부터 고등까지, 스킬을 열며 푸는 수학</span>
-          </div>
-        </div>
-
-        <div className="topbar-actions">
-          <div className="stat-pill">
-            <Flame size={16} />
-            <span>{profile.xp || 0} XP</span>
-          </div>
-          <div className="user-pill">
-            {user.photoURL ? <img src={user.photoURL} alt="" /> : <UserRound size={18} />}
-            <span>{user.displayName || "러너"}</span>
-          </div>
-          <button className="icon-button" onClick={() => signOut(auth)} aria-label="로그아웃">
-            <LogOut size={18} />
-          </button>
-        </div>
-      </header>
+      <Topbar user={user} profile={profile} />
 
       <section className="dashboard-strip">
         <SkillTree
@@ -362,17 +367,7 @@ export default function App() {
           unlockedSkills={unlockedSkills}
           onSelect={setSelectedSkillId}
         />
-        <Leaderboard
-          leaders={leaderboard}
-          currentUid={user.uid}
-          profile={profile}
-          members={members}
-          attempts={activityAttempts}
-          onRoleUpdate={async (payload) => {
-            await updateUserRole(payload);
-            await refreshMembers();
-          }}
-        />
+        <Leaderboard leaders={leaderboard} currentUid={user.uid} />
       </section>
 
       <section
@@ -421,6 +416,70 @@ export default function App() {
         </div>
       </section>
     </main>
+  );
+}
+
+function AdminPage({ user, profile, leaders, members, attempts, onRoleUpdate }) {
+  return (
+    <main className="app-shell admin-shell">
+      <Topbar user={user} profile={profile} />
+      <section className="admin-layout">
+        <Leaderboard leaders={leaders} currentUid={user.uid} />
+        <section className="admin-panel">
+          <div className="section-title">
+            <ShieldCheck size={18} />
+            <h2>관리자 페이지</h2>
+          </div>
+          <MemberManager members={members} onRoleUpdate={onRoleUpdate} />
+        </section>
+        <section className="admin-panel">
+          <ActivityPanel members={members} attempts={attempts} />
+        </section>
+      </section>
+    </main>
+  );
+}
+
+function ParentPage({ user, profile, members, attempts, leaders }) {
+  return (
+    <main className="app-shell parent-shell">
+      <Topbar user={user} profile={profile} />
+      <section className="parent-layout">
+        <ParentInsightPanel profile={profile} members={members} />
+        <Leaderboard leaders={leaders} currentUid={user.uid} />
+        <ActivityPanel members={members} attempts={attempts} />
+      </section>
+    </main>
+  );
+}
+
+function Topbar({ user, profile }) {
+  return (
+    <header className="topbar">
+      <div className="brand-block">
+        <div className="brand-mark">
+          <Gamepad2 size={22} />
+        </div>
+        <div>
+          <strong>Study Math Arena</strong>
+          <span>중등부터 고등까지, 스킬을 열며 푸는 수학</span>
+        </div>
+      </div>
+
+      <div className="topbar-actions">
+        <div className="stat-pill">
+          <Flame size={16} />
+          <span>{profile.xp || 0} XP</span>
+        </div>
+        <div className="user-pill">
+          {user.photoURL ? <img src={user.photoURL} alt="" /> : <UserRound size={18} />}
+          <span>{user.displayName || "러너"}</span>
+        </div>
+        <button className="icon-button" onClick={() => signOut(auth)} aria-label="로그아웃">
+          <LogOut size={18} />
+        </button>
+      </div>
+    </header>
   );
 }
 
@@ -558,6 +617,9 @@ function Leaderboard({ leaders, currentUid, profile, members, attempts, onRoleUp
       {profile?.role === "admin" && (
         <MemberManager members={members} onRoleUpdate={onRoleUpdate} />
       )}
+      {profile?.role === "parents" && (
+        <ParentInsightPanel profile={profile} members={members} />
+      )}
       {["admin", "parents"].includes(profile?.role) && (
         <ActivityPanel members={members} attempts={attempts} />
       )}
@@ -654,6 +716,55 @@ function MemberManager({ members, onRoleUpdate }) {
       ))}
     </div>
   );
+}
+
+function ParentInsightPanel({ profile, members }) {
+  const students = members
+    .filter((member) => member.role === "student")
+    .sort((a, b) => (b.xp || 0) - (a.xp || 0));
+  const childIds = new Set(profile?.parentOf || []);
+  const children = students.filter((student) => childIds.has(student.uid));
+  const avgXp = students.length ? Math.round(students.reduce((sum, student) => sum + (student.xp || 0), 0) / students.length) : 0;
+  const avgSolved = students.length
+    ? Math.round(students.reduce((sum, student) => sum + (student.solvedCount || 0), 0) / students.length)
+    : 0;
+
+  return (
+    <div className="parent-insight">
+      <h3>자녀 학습 비교</h3>
+      {children.length ? (
+        children.map((child) => {
+          const rankIndex = students.findIndex((student) => student.uid === child.uid);
+          const above = rankIndex > 0 ? students[rankIndex - 1] : null;
+          const xpDiff = (child.xp || 0) - avgXp;
+          const solvedDiff = (child.solvedCount || 0) - avgSolved;
+          return (
+            <div className="child-card" key={child.uid}>
+              <strong>{formatStudentName(child)}</strong>
+              <span>전체 {rankIndex + 1}위 · {child.xp || 0} XP · {child.solvedCount || 0}문제</span>
+              <div className="comparison-grid">
+                <small className={xpDiff >= 0 ? "positive" : "negative"}>
+                  평균 XP 대비 {formatSignedNumber(xpDiff)}
+                </small>
+                <small className={solvedDiff >= 0 ? "positive" : "negative"}>
+                  평균 해결 수 대비 {formatSignedNumber(solvedDiff)}
+                </small>
+                <small>
+                  {above ? `위 학생까지 ${Math.max(0, (above.xp || 0) - (child.xp || 0))} XP` : "현재 1위"}
+                </small>
+              </div>
+            </div>
+          );
+        })
+      ) : (
+        <p>admin이 회원 관리에서 이 학부모의 자녀를 선택해야 합니다.</p>
+      )}
+    </div>
+  );
+}
+
+function formatSignedNumber(value) {
+  return value > 0 ? `+${value}` : `${value}`;
 }
 
 function ActivityPanel({ members, attempts }) {
