@@ -13,7 +13,8 @@ import {
   where,
 } from "firebase/firestore";
 import { db } from "../firebase";
-import { curriculumNodes, sampleProblems } from "../data/curriculum";
+import { curriculumNodes } from "../data/curriculum";
+import { generatedProblems } from "../data/problemBank";
 
 export async function ensureUserProfile(user) {
   const ref = doc(db, "users", user.uid);
@@ -38,15 +39,15 @@ export async function ensureUserProfile(user) {
 export async function seedCatalogIfNeeded() {
   const markerRef = doc(db, "system", "catalog");
   const marker = await getDoc(markerRef);
-  if (marker.exists() && marker.data()?.version >= 2) return;
+  if (marker.exists() && marker.data()?.version >= 3) return;
 
   await Promise.all([
     ...curriculumNodes.map((node) => setDoc(doc(db, "skills", node.id), node)),
-    ...sampleProblems.map((problem) => setDoc(doc(db, "problems", problem.id), problem)),
+    ...generatedProblems.map((problem) => setDoc(doc(db, "problems", problem.id), problem)),
     setDoc(markerRef, {
       seededAt: serverTimestamp(),
-      version: 2,
-      note: "Expanded middle/high school math catalog seed.",
+      version: 3,
+      note: "Expanded catalog with 50 generated problems per skill.",
     }),
   ]);
 }
@@ -57,7 +58,7 @@ export async function loadSkills() {
 }
 
 export async function loadProblemsBySkill(nodeId) {
-  const q = query(collection(db, "problems"), where("nodeId", "==", nodeId), limit(12));
+  const q = query(collection(db, "problems"), where("nodeId", "==", nodeId), limit(50));
   const snap = await getDocs(q);
   return snap.docs.map((item) => item.data());
 }

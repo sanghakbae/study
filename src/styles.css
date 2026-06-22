@@ -289,9 +289,9 @@ button:disabled {
   width: 100%;
   display: grid;
   grid-template-columns: repeat(6, minmax(154px, 1fr));
-  gap: 14px;
+  gap: 10px;
   align-items: stretch;
-  padding: 14px;
+  padding: 10px;
   border-radius: 8px;
   background:
     linear-gradient(90deg, rgba(20, 184, 166, 0.14), rgba(245, 158, 11, 0.14)),
@@ -303,49 +303,50 @@ button:disabled {
   position: relative;
   display: grid;
   grid-template-rows: auto 1fr;
-  gap: 10px;
+  gap: 6px;
 }
 
 .skill-stage:not(:last-child)::after {
   content: "";
   position: absolute;
-  top: 44px;
-  right: -14px;
-  bottom: 24px;
-  width: 14px;
+  top: 32px;
+  right: -10px;
+  bottom: 16px;
+  width: 10px;
   background: linear-gradient(90deg, rgba(15, 23, 42, 0.2), rgba(15, 23, 42, 0));
   clip-path: polygon(0 47%, 72% 47%, 72% 38%, 100% 50%, 72% 62%, 72% 53%, 0 53%);
   opacity: 0.75;
 }
 
 .skill-stage-header {
-  height: 34px;
+  height: 24px;
   display: grid;
   place-items: center;
   border-radius: 8px;
   background: #111827;
   color: #fff;
   font-weight: 950;
+  font-size: 0.82rem;
   box-shadow: 0 8px 18px rgba(15, 23, 42, 0.18);
 }
 
 .skill-stage-list {
   display: grid;
-  grid-auto-rows: minmax(68px, auto);
-  gap: 9px;
+  grid-auto-rows: minmax(34px, auto);
+  gap: 5px;
 }
 
 .skill-node {
   position: relative;
   width: 100%;
-  min-height: 68px;
+  min-height: 34px;
   display: grid;
-  grid-template-columns: 20px 1fr;
-  grid-template-rows: auto 1fr;
-  gap: 2px 7px;
+  grid-template-columns: 18px 1fr;
+  grid-template-rows: 1fr;
+  gap: 0 6px;
   align-items: center;
   text-align: left;
-  padding: 9px 10px;
+  padding: 5px 7px;
   border: 1px solid #94a3b8;
   border-radius: 8px;
   background:
@@ -370,14 +371,15 @@ button:disabled {
 }
 
 .skill-state {
-  grid-row: 1 / span 2;
-  width: 20px;
-  height: 20px;
+  grid-row: auto;
+  width: 18px;
+  height: 18px;
   display: grid;
   place-items: center;
 }
 
 .skill-unit {
+  display: none;
   color: #64748b;
   font-size: 0.68rem;
   font-weight: 800;
@@ -388,9 +390,12 @@ button:disabled {
 }
 
 .skill-node strong {
-  font-size: 0.83rem;
-  line-height: 1.25;
+  font-size: 0.78rem;
+  line-height: 1.15;
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .skill-node.completed {
@@ -413,12 +418,12 @@ button:disabled {
 .skill-node em {
   position: absolute;
   right: 8px;
-  top: -10px;
-  padding: 3px 7px;
+  top: -9px;
+  padding: 2px 6px;
   border-radius: 999px;
   background: #111827;
   color: #fff;
-  font-size: 0.68rem;
+  font-size: 0.62rem;
   font-style: normal;
   font-weight: 900;
 }
@@ -479,10 +484,39 @@ button:disabled {
 
 .workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1.45fr) minmax(360px, 0.55fr);
   gap: 14px;
   margin-top: 14px;
   align-items: stretch;
+}
+
+.resize-handle {
+  align-self: stretch;
+  width: 12px;
+  min-width: 12px;
+  padding: 0;
+  border-radius: 999px;
+  background: rgba(250, 204, 21, 0.2);
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.resize-handle span {
+  display: block;
+  width: 4px;
+  height: 100%;
+  margin: 0 auto;
+  border-radius: 999px;
+  background: rgba(202, 138, 4, 0.35);
+}
+
+.resize-handle:hover,
+.resizing-workspace .resize-handle {
+  background: rgba(250, 204, 21, 0.34);
+}
+
+.resizing-workspace {
+  cursor: col-resize;
+  user-select: none;
 }
 
 .notebook-panel,
@@ -762,6 +796,14 @@ button:disabled {
   .dashboard-strip,
   .workspace {
     grid-template-columns: 1fr;
+  }
+
+  .workspace {
+    grid-template-columns: 1fr !important;
+  }
+
+  .resize-handle {
+    display: none;
   }
 
   .guide-panel,

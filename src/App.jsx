@@ -34,7 +34,8 @@ import {
   saveAttempt,
   seedCatalogIfNeeded,
 } from "./services/firestore";
-import { curriculumNodes, sampleProblems } from "./data/curriculum";
+import { curriculumNodes } from "./data/curriculum";
+import { getProblemsForSkill } from "./data/problemBank";
 import { externalProblemSources } from "./services/problemSources";
 
 const fallbackUser = {
@@ -57,7 +58,7 @@ export default function App() {
   const [authReady, setAuthReady] = useState(false);
   const [skills, setSkills] = useState(curriculumNodes);
   const [selectedSkillId, setSelectedSkillId] = useState("m1-numbers");
-  const [problems, setProblems] = useState(sampleProblems.filter((item) => item.nodeId === "m1-numbers"));
+  const [problems, setProblems] = useState(getProblemsForSkill(curriculumNodes[0]));
   const [selectedProblemId, setSelectedProblemId] = useState("p-m1-numbers-01");
   const [leaderboard, setLeaderboard] = useState([]);
   const [guide, setGuide] = useState("문제를 고르고 노트에 풀이를 시작하세요. 막히는 순간 오른쪽 버튼으로 힌트를 받을 수 있습니다.");
@@ -66,7 +67,9 @@ export default function App() {
   const [completedSkills, setCompletedSkills] = useState(["m1-numbers"]);
   const [tool, setTool] = useState("pen");
   const [dataWarning, setDataWarning] = useState("");
+  const [noteRatio, setNoteRatio] = useState(72);
   const notebookRef = useRef(null);
+  const workspaceRef = useRef(null);
 
   const selectedSkill = useMemo(
     () => skills.find((item) => item.id === selectedSkillId) || skills[0],
@@ -74,7 +77,7 @@ export default function App() {
   );
 
   const selectedProblem = useMemo(
-    () => problems.find((item) => item.id === selectedProblemId) || problems[0] || sampleProblems[0],
+    () => problems.find((item) => item.id === selectedProblemId) || problems[0] || getProblemsForSkill(curriculumNodes[0])[0],
     [selectedProblemId, problems],
   );
 
@@ -118,7 +121,7 @@ export default function App() {
         const nextProblems = getFallbackProblems(selectedSkill);
         setProblems(nextProblems);
         setSelectedProblemId(nextProblems[0]?.id || "");
-        setDataWarning(`문제 DB를 읽지 못해 내장 샘플로 표시 중: ${error.message}`);
+        setDataWarning("");
       });
   }, [selectedSkillId, selectedSkill, user]);
 
@@ -250,7 +253,11 @@ export default function App() {
         <Leaderboard leaders={leaderboard} currentUid={user.uid} />
       </section>
 
-      <section className="workspace">
+      <section
+        className="workspace"
+        ref={workspaceRef}
+        style={{ gridTemplateColumns: `${noteRatio}fr 12px ${100 - noteRatio}fr` }}
+      >
         <NotebookPanel
           ref={notebookRef}
           tool={tool}
@@ -261,6 +268,8 @@ export default function App() {
           selectedProblemId={selectedProblemId}
           setSelectedProblemId={setSelectedProblemId}
         />
+
+        <ResizeHandle workspaceRef={workspaceRef} onResize={setNoteRatio} />
 
         <GuidePanel
           problem={selectedProblem}
@@ -291,24 +300,37 @@ export default function App() {
   );
 }
 
-function getFallbackProblems(skill) {
-  const seeded = sampleProblems.filter((item) => item.nodeId === skill?.id);
-  if (seeded.length) return seeded;
+function ResizeHandle({ workspaceRef, onResize }) {
+  function startResize(event) {
+    event.preventDefault();
+    const workspace = workspaceRef.current;
+    if (!workspace) return;
+    const rect = workspace.getBoundingClientRect();
 
-  return [
-    {
-      id: `fallback-${skill?.id || "problem"}`,
-      nodeId: skill?.id || "unknown",
-      gradeBand: skill?.stage?.startsWith("중") ? "middle" : "high",
-      source: "generated-placeholder",
-      sourceName: "단원 대표 연습 문제",
-      difficulty: skill?.stage?.startsWith("중") ? 2 : 3,
-      title: `${skill?.title || "수학"} 대표 문제`,
-      prompt: `${skill?.title || "이 단원"}의 핵심 개념을 이용해 풀이 과정을 노트에 정리해 보세요. 실제 교과서/문제은행 문항은 Firestore problems 컬렉션에 추가하면 이 자리에 표시됩니다.`,
-      answer: "관리자 등록 필요",
-      concept: `${skill?.unit || "수학"} 영역의 정의, 조건, 구해야 하는 값을 먼저 분리하세요.`,
-    },
-  ];
+    const move = (moveEvent) => {
+      const raw = ((moveEvent.clientX - rect.left) / rect.width) * 100;
+      onResize(Math.min(82, Math.max(48, raw)));
+    };
+    const stop = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+      document.body.classList.remove("resizing-workspace");
+    };
+
+    document.body.classList.add("resizing-workspace");
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop);
+  }
+
+  return (
+    <button className="resize-handle" onPointerDown={startResize} aria-label="노트와 가이드 폭 조절">
+      <span />
+    </button>
+  );
+}
+
+function getFallbackProblems(skill) {
+  return getProblemsForSkill(skill);
 }
 
 function LoginScreen({ onLogin }) {
