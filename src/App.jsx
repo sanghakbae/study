@@ -30,11 +30,14 @@ import { onAuthStateChanged, signInWithPopup, signOut } from "firebase/auth";
 import { auth, googleProvider } from "./firebase";
 import {
   ensureUserProfile,
+  loadAttemptsForUsers,
   loadLeaderboard,
   loadProblemsBySkill,
   loadSkills,
+  loadUsers,
   saveAttempt,
   seedCatalogIfNeeded,
+  updateUserRole,
 } from "./services/firestore";
 import { curriculumNodes } from "./data/curriculum";
 import { getProblemsForSkill } from "./data/problemBank";
@@ -43,12 +46,13 @@ import { externalProblemSources } from "./services/problemSources";
 const fallbackUser = {
   displayName: "게스트",
   photoURL: "",
+  role: "student",
   xp: 0,
   solvedCount: 0,
 };
 
 const guideActions = [
-  { key: "next", label: "다음 한 단계", icon: ChevronRight },
+  { key: "next", label: "풀이 방향", icon: ChevronRight },
   { key: "hint", label: "힌트 받기", icon: HelpCircle },
   { key: "check", label: "내 풀이 점검", icon: ShieldCheck },
   { key: "concept", label: "개념 다시보기", icon: BookOpen },
@@ -63,6 +67,8 @@ export default function App() {
   const [problems, setProblems] = useState(getProblemsForSkill(curriculumNodes[0]));
   const [selectedProblemId, setSelectedProblemId] = useState("p-m1-numbers-01");
   const [leaderboard, setLeaderboard] = useState([]);
+  const [members, setMembers] = useState([]);
+  const [activityAttempts, setActivityAttempts] = useState([]);
   const [guide, setGuide] = useState("문제를 고르고 노트에 풀이를 시작하세요. 막히는 순간 오른쪽 버튼으로 힌트를 받을 수 있습니다.");
   const [guideLoading, setGuideLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -107,12 +113,16 @@ export default function App() {
           displayName: nextUser.displayName || "수학 러너",
           photoURL: nextUser.photoURL || "",
           email: nextUser.email || "",
+          role: nextUser.email === "totoriverce@gmail.com" ? "admin" : "student",
           xp: 0,
           solvedCount: 0,
         });
         try {
-          await ensureUserProfile(nextUser);
-          await seedCatalogIfNeeded();
+          const nextProfile = await ensureUserProfile(nextUser);
+          setProfile((current) => ({ ...current, ...nextProfile }));
+          if (nextUser.email === "totoriverce@gmail.com") {
+            await seedCatalogIfNeeded();
+          }
           await refreshCatalog();
           setDataWarning("");
         } catch (error) {
@@ -131,7 +141,7 @@ export default function App() {
     if (!user) return;
     loadProblemsBySkill(selectedSkillId)
       .then((items) => {
-        const nextProblems = items.length ? items : getFallbackProblems(selectedSkill);
+        const nextProblems = items.length >= 50 ? items : getFallbackProblems(selectedSkill);
         setProblems(nextProblems);
         setSelectedProblemId(nextProblems[0]?.id || "");
         setGuide("새 문제를 열었습니다. 풀이를 쓰고 필요한 순간에 가이드를 요청하세요.");
@@ -154,6 +164,30 @@ export default function App() {
       setProfile(me);
     }
   }
+
+  async function refreshMembers(nextProfile = profile) {
+    if (!user || !["admin", "parents"].includes(nextProfile.role)) {
+      setMembers([]);
+      setActivityAttempts([]);
+      return;
+    }
+
+    const loadedUsers = await loadUsers();
+    setMembers(loadedUsers);
+    const targetUserIds =
+      nextProfile.role === "admin"
+        ? loadedUsers.filter((item) => item.role === "student").map((item) => item.uid)
+        : nextProfile.parentOf || [];
+    const attempts = await loadAttemptsForUsers(targetUserIds);
+    setActivityAttempts(attempts);
+  }
+
+  useEffect(() => {
+    refreshMembers().catch((error) => {
+      console.error(error);
+      setDataWarning(`회원/학습 기록 권한 확인 필요: ${error.message}`);
+    });
+  }, [profile.role, profile.parentOf, user]);
 
   async function handleLogin() {
     try {
@@ -213,26 +247,45 @@ export default function App() {
     }
   }
 
-  async function handleSaveAttempt(isCorrect) {
+  function markProblemCompleted(problemId) {
+    setSolvedBySkill((current) => {
+      const solved = new Set(current[selectedSkillId] || []);
+      solved.add(problemId);
+      return { ...current, [selectedSkillId]: Array.from(solved) };
+    });
+  }
+
+  function advanceToNextProblem(completedProblemId) {
+    const solved = new Set([...(solvedBySkill[selectedSkillId] || []), completedProblemId]);
+    const nextProblem = problems.find((problem) => !solved.has(problem.id));
+    if (nextProblem) {
+      setSelectedProblemId(nextProblem.id);
+      setGuide("다음 문제로 이동했습니다. 풀이를 완료해야 다음 문제로 넘어갑니다.");
+      return;
+    }
+    setGuide("이 스킬의 50문제를 모두 완료했습니다. 스킬 트리에서 다음 열린 스킬을 선택하세요.");
+  }
+
+  async function handleSaveAttempt(completed) {
     if (!user || !selectedProblem) return;
     setSaving(true);
     try {
-      const result = await saveAttempt({
+      await saveAttempt({
         user,
         problem: selectedProblem,
         strokes: notebookRef.current?.exportStrokes?.() || [],
         guide,
-        isCorrect,
+        isCorrect: completed,
+        status: completed ? "completed" : "saved",
       });
-      setGuide(`저장 완료. ${result.xpGain} XP를 획득했습니다.`);
-      if (isCorrect) {
-        setSolvedBySkill((current) => {
-          const solved = new Set(current[selectedSkillId] || []);
-          solved.add(selectedProblem.id);
-          return { ...current, [selectedSkillId]: Array.from(solved) };
-        });
+      if (completed) {
+        markProblemCompleted(selectedProblem.id);
+        advanceToNextProblem(selectedProblem.id);
+      } else {
+        setGuide("풀이가 저장됐습니다. 해결 완료를 눌러야 다음 문제로 넘어갑니다.");
       }
       await refreshCatalog();
+      await refreshMembers();
     } catch (error) {
       console.error(error);
       setGuide(`저장 실패: ${error.message}`);
@@ -309,7 +362,17 @@ export default function App() {
           unlockedSkills={unlockedSkills}
           onSelect={setSelectedSkillId}
         />
-        <Leaderboard leaders={leaderboard} currentUid={user.uid} />
+        <Leaderboard
+          leaders={leaderboard}
+          currentUid={user.uid}
+          profile={profile}
+          members={members}
+          attempts={activityAttempts}
+          onRoleUpdate={async (payload) => {
+            await updateUserRole(payload);
+            await refreshMembers();
+          }}
+        />
       </section>
 
       <section
@@ -335,6 +398,7 @@ export default function App() {
           guide={guide}
           guideLoading={guideLoading}
           reviewCount={reviewCounts[selectedProblem.id] || 0}
+          isAdmin={profile.role === "admin"}
           saving={saving}
           onGuide={handleGuide}
           onSave={handleSaveAttempt}
@@ -472,14 +536,7 @@ function SkillTree({ skills, selectedSkillId, completedSkills, solvedBySkill, un
   );
 }
 
-function Leaderboard({ leaders, currentUid }) {
-  const visible = leaders.length
-    ? leaders
-    : [
-        { uid: "sample-a", displayName: "수열마스터", xp: 1240, solvedCount: 38 },
-        { uid: "sample-b", displayName: "함수러너", xp: 980, solvedCount: 30 },
-        { uid: "sample-c", displayName: "기하헌터", xp: 760, solvedCount: 22 },
-      ];
+function Leaderboard({ leaders, currentUid, profile, members, attempts, onRoleUpdate }) {
   return (
     <section className="leader-panel">
       <div className="section-title">
@@ -487,18 +544,135 @@ function Leaderboard({ leaders, currentUid }) {
         <h2>랭킹</h2>
       </div>
       <ol className="leader-list">
-        {visible.slice(0, 6).map((leader, index) => (
+        {leaders.length ? leaders.slice(0, 6).map((leader, index) => (
           <li key={leader.uid} className={leader.uid === currentUid ? "me" : ""}>
             <span className="rank-badge">{index < 3 ? <Medal size={15} /> : index + 1}</span>
             <div>
-              <strong>{leader.displayName || "러너"}</strong>
+              <strong>{formatStudentName(leader)}</strong>
               <small>{leader.solvedCount || 0}문제 해결</small>
             </div>
             <b>{leader.xp || 0}</b>
           </li>
-        ))}
+        )) : <li className="empty-row">아직 랭킹 데이터가 없습니다.</li>}
       </ol>
+      {profile?.role === "admin" && (
+        <MemberManager members={members} onRoleUpdate={onRoleUpdate} />
+      )}
+      {["admin", "parents"].includes(profile?.role) && (
+        <ActivityPanel members={members} attempts={attempts} />
+      )}
     </section>
+  );
+}
+
+function formatStudentName(member) {
+  const name = member?.displayName || "러너";
+  return member?.grade ? `${name} (${member.grade})` : name;
+}
+
+function MemberManager({ members, onRoleUpdate }) {
+  const students = members.filter((member) => member.role === "student");
+
+  async function saveMember(member, patch) {
+    await onRoleUpdate({
+      uid: member.uid,
+      role: patch.role ?? member.role ?? "student",
+      parentOf: patch.parentOf ?? member.parentOf ?? [],
+      displayName: patch.displayName,
+      grade: patch.grade,
+      xp: patch.xp,
+      solvedCount: patch.solvedCount,
+    });
+  }
+
+  async function handleRoleChange(member, role) {
+    await saveMember(member, {
+      role,
+      parentOf: role === "parents" ? member.parentOf || [] : [],
+    });
+  }
+
+  async function handleParentOfChange(member, childUid) {
+    await saveMember(member, {
+      role: "parents",
+      parentOf: childUid ? [childUid] : [],
+    });
+  }
+
+  return (
+    <div className="member-manager">
+      <h3>회원 관리</h3>
+      {members.slice(0, 12).map((member) => (
+        <div className="member-row" key={member.uid}>
+          <div>
+            <strong>{formatStudentName(member)}</strong>
+            <small>{member.email}</small>
+          </div>
+          <div className="member-edit-grid">
+            <input
+              defaultValue={member.displayName || ""}
+              onBlur={(event) => saveMember(member, { displayName: event.target.value })}
+              aria-label="학생 이름"
+            />
+            <input
+              defaultValue={member.grade || ""}
+              onBlur={(event) => saveMember(member, { grade: event.target.value })}
+              aria-label="등급"
+              placeholder="등급"
+            />
+            <input
+              type="number"
+              min="0"
+              defaultValue={member.xp || 0}
+              onBlur={(event) => saveMember(member, { xp: event.target.value })}
+              aria-label="XP"
+            />
+            <input
+              type="number"
+              min="0"
+              defaultValue={member.solvedCount || 0}
+              onBlur={(event) => saveMember(member, { solvedCount: event.target.value })}
+              aria-label="해결 수"
+            />
+          </div>
+          <select value={member.role || "student"} onChange={(event) => handleRoleChange(member, event.target.value)}>
+            <option value="student">student</option>
+            <option value="parents">parents</option>
+            <option value="admin">admin</option>
+          </select>
+          {(member.role || "student") === "parents" && (
+            <select value={member.parentOf?.[0] || ""} onChange={(event) => handleParentOfChange(member, event.target.value)}>
+              <option value="">학생 선택</option>
+              {students.map((student) => (
+                <option value={student.uid} key={student.uid}>
+                  {formatStudentName(student)}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ActivityPanel({ members, attempts }) {
+  const memberName = new Map(members.map((member) => [member.uid, member.displayName || member.email || "학생"]));
+  return (
+    <div className="activity-panel">
+      <h3>학습 기록</h3>
+      {attempts.length ? (
+        attempts.slice(0, 12).map((attempt) => (
+          <div className="activity-row" key={attempt.id}>
+            <strong>{memberName.get(attempt.uid) || "학생"}</strong>
+            <span>{attempt.nodeId} · {attempt.problemId}</span>
+            <small>{attempt.completed ? "해결 완료" : "풀이 저장"}</small>
+          </div>
+        ))
+      ) : (
+        <p>아직 저장된 학습 기록이 없습니다.</p>
+      )}
+    </div>
   );
 }
 
@@ -769,7 +943,7 @@ function ProblemAssets({ assets }) {
   );
 }
 
-function GuidePanel({ problem, guide, guideLoading, reviewCount, saving, onGuide, onSave }) {
+function GuidePanel({ problem, guide, guideLoading, reviewCount, isAdmin, saving, onGuide, onSave }) {
   return (
     <aside className="guide-panel">
       <div className="section-title">
@@ -795,11 +969,13 @@ function GuidePanel({ problem, guide, guideLoading, reviewCount, saving, onGuide
         <ReactMarkdown remarkPlugins={[remarkGfm]}>{guide}</ReactMarkdown>
       </div>
 
-      <div className="answer-box">
-        <span>정답 확인용</span>
-        <strong>{problem?.answer}</strong>
-        <small>운영 버전에서는 학생 시도 후 공개하거나 교사 설정으로 제어하세요.</small>
-      </div>
+      {isAdmin && (
+        <div className="answer-box">
+          <span>정답 확인용</span>
+          <strong>{problem?.answer}</strong>
+          <small>admin 권한에서만 표시됩니다.</small>
+        </div>
+      )}
 
       <div className="save-row">
         <button onClick={() => onSave(false)} disabled={saving}>

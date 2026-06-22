@@ -101,7 +101,7 @@ button:disabled {
 }
 
 .login-panel {
-  width: min(100%, 460px);
+  width: min(100%, 560px);
   position: relative;
   z-index: 1;
   color: #fff;
@@ -132,9 +132,12 @@ button:disabled {
 
 .login-panel h1 {
   margin: 0;
-  font-size: clamp(2.4rem, 7vw, 4.4rem);
+  width: 100%;
+  font-size: clamp(2rem, 5vw, 3.35rem);
   line-height: 0.95;
   letter-spacing: 0;
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 .login-panel p {
@@ -468,7 +471,6 @@ button:disabled {
   gap: 8px;
   margin: 0;
   padding: 0;
-  overflow: auto;
 }
 
 .leader-list li {
@@ -479,6 +481,13 @@ button:disabled {
   padding: 9px;
   border-radius: 8px;
   background: #f8fafc;
+}
+
+.leader-list .empty-row {
+  display: block;
+  color: #64748b;
+  font-weight: 800;
+  font-size: 0.82rem;
 }
 
 .leader-list li.me {
@@ -508,6 +517,71 @@ button:disabled {
 
 .leader-list b {
   color: #0f766e;
+}
+
+.leader-panel {
+  min-height: 0;
+  overflow: auto;
+}
+
+.member-manager,
+.activity-panel {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.member-manager h3,
+.activity-panel h3 {
+  margin: 0 0 8px;
+  font-size: 0.92rem;
+}
+
+.member-row,
+.activity-row {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 8px;
+  background: #f8fafc;
+  margin-bottom: 7px;
+}
+
+.member-row strong,
+.member-row small,
+.activity-row strong,
+.activity-row span,
+.activity-row small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.member-row small,
+.activity-row span,
+.activity-row small,
+.activity-panel p {
+  color: #64748b;
+  font-size: 0.75rem;
+}
+
+.member-edit-grid {
+  display: grid;
+  grid-template-columns: 1fr 0.8fr;
+  gap: 6px;
+}
+
+.member-row select,
+.member-row input {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  font-size: 0.78rem;
+  font-weight: 800;
+  padding: 0 8px;
 }
 
 .workspace {
