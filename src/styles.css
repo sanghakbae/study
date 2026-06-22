@@ -22,6 +22,13 @@ body,
 
 body {
   overflow-x: hidden;
+  overscroll-behavior: none;
+}
+
+body.drawing-on-canvas {
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 button,
@@ -658,6 +665,9 @@ button:disabled {
     #fff;
   background-size: 28px 28px;
   touch-action: none;
+  overscroll-behavior: contain;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .canvas-wrap canvas {
@@ -669,6 +679,7 @@ button:disabled {
   touch-action: none;
   cursor: crosshair;
   user-select: none;
+  -webkit-user-select: none;
 }
 
 .eraser-cursor {

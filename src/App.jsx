@@ -603,6 +603,7 @@ const NotebookPanel = forwardRef(function NotebookPanel(
   function startDrawing(event) {
     event.preventDefault();
     drawingRef.current = true;
+    document.body.classList.add("drawing-on-canvas");
     const point = getPoint(event);
     currentStrokeRef.current = [point];
     lastPointRef.current = point;
@@ -628,6 +629,7 @@ const NotebookPanel = forwardRef(function NotebookPanel(
     if (!drawingRef.current) return;
     event?.preventDefault?.();
     drawingRef.current = false;
+    document.body.classList.remove("drawing-on-canvas");
     strokesRef.current.push({ tool: toolRef.current, points: currentStrokeRef.current });
     currentStrokeRef.current = [];
     lastPointRef.current = null;
@@ -650,6 +652,7 @@ const NotebookPanel = forwardRef(function NotebookPanel(
 
   function hideCursor() {
     if (cursorRef.current) cursorRef.current.style.opacity = "0";
+    if (!drawingRef.current) document.body.classList.remove("drawing-on-canvas");
   }
 
   useImperativeHandle(ref, () => ({
