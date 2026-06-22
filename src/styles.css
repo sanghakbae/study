@@ -133,7 +133,7 @@ button:disabled {
 .login-panel h1 {
   margin: 0;
   width: 100%;
-  font-size: clamp(1.875rem, 4.8vw, 3.225rem);
+  font-size: clamp(1.5625rem, 4.25vw, 2.9125rem);
   line-height: 1.08;
   letter-spacing: 0;
   white-space: nowrap;
@@ -147,18 +147,25 @@ button:disabled {
 }
 
 .google-button {
-  width: 100%;
-  min-height: 26px;
+  width: 50%;
+  margin: 0 auto;
+  height: 28px;
+  min-height: 28px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 6px;
   border-radius: 8px;
   background: #fff;
   color: #111827;
   font-weight: 800;
-  padding: 8px 12px;
-  font-size: 0.9rem;
+  padding: 0 10px;
+  font-size: 0.78rem;
+}
+
+.google-button svg {
+  width: 14px;
+  height: 14px;
 }
 
 .app-shell {
