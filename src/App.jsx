@@ -75,6 +75,7 @@ export default function App() {
   const [guide, setGuide] = useState("문제를 고르고 노트에 풀이를 시작하세요. 막히는 순간 오른쪽 버튼으로 힌트를 받을 수 있습니다.");
   const [guideLoading, setGuideLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [answerChecks, setAnswerChecks] = useState({});
   const [reviewCounts, setReviewCounts] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem("study-review-counts") || "{}");
@@ -233,6 +234,11 @@ export default function App() {
 
     if (action.key !== "check") return;
 
+    if (answerChecks[selectedProblem.id]?.status !== "wrong") {
+      setGuide("## 먼저 정답 확인\n- 내 풀이 점검은 정답 확인 후 틀렸을 때만 사용할 수 있습니다.\n- 맞았다면 해결 완료를 눌러 다음 문제로 넘어가세요.");
+      return;
+    }
+
     const reviewKey = `${selectedProblem.id}`;
     const usedCount = reviewCounts[reviewKey] || 0;
     if (usedCount >= 3) {
@@ -309,6 +315,47 @@ export default function App() {
       setGuide(`저장 실패: ${error.message}`);
     } finally {
       setSaving(false);
+    }
+  }
+
+  function normalizeAnswer(value) {
+    return String(value ?? "")
+      .replace(/\s+/g, "")
+      .replace(/[()]/g, "")
+      .replace(/−/g, "-")
+      .toLowerCase();
+  }
+
+  async function handleAnswerCheck(inputAnswer) {
+    if (!user || !selectedProblem) return;
+    const correct = normalizeAnswer(inputAnswer) === normalizeAnswer(selectedProblem.answer);
+    setAnswerChecks((current) => ({
+      ...current,
+      [selectedProblem.id]: {
+        status: correct ? "correct" : "wrong",
+        input: inputAnswer,
+      },
+    }));
+
+    if (correct) {
+      setGuide("정답입니다. 풀이 점검 없이 해결 완료를 눌러 다음 문제로 넘어가세요.");
+      return;
+    }
+
+    setGuide("정답이 아닙니다. 내 풀이 점검을 눌러 어디서 어긋났는지 확인하세요.");
+    try {
+      await saveAttempt({
+        user,
+        problem: selectedProblem,
+        strokes: notebookRef.current?.exportStrokes?.() || [],
+        guide,
+        isCorrect: false,
+        status: "wrong",
+      });
+      await refreshMembers();
+    } catch (error) {
+      console.error(error);
+      setGuide(`오답 기록 저장 실패: ${error.message}`);
     }
   }
 
@@ -426,9 +473,11 @@ export default function App() {
           guide={guide}
           guideLoading={guideLoading}
           reviewCount={reviewCounts[selectedProblem.id] || 0}
+          answerCheck={answerChecks[selectedProblem.id]}
           isAdmin={profile.role === "admin"}
           saving={saving}
           onGuide={handleGuide}
+          onAnswerCheck={handleAnswerCheck}
           onSave={handleSaveAttempt}
         />
       </section>
@@ -921,8 +970,23 @@ function formatSignedNumber(value) {
 
 function ActivityPanel({ members, attempts }) {
   const memberName = new Map(members.map((member) => [member.uid, member.displayName || member.email || "학생"]));
+  const frequentWrong = getFrequentWrongProblems(attempts);
   return (
     <div className="activity-panel">
+      <h3>자주 틀리는 문제</h3>
+      {frequentWrong.length ? (
+        <div className="wrong-list">
+          {frequentWrong.map((item) => (
+            <div className="wrong-row" key={`${item.nodeId}-${item.problemId}`}>
+              <strong>{item.problemId}</strong>
+              <span>{item.nodeId}</span>
+              <b>{item.count}회</b>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p>아직 오답 기록이 없습니다.</p>
+      )}
       <h3>학습 기록</h3>
       {attempts.length ? (
         attempts.slice(0, 12).map((attempt) => (
@@ -937,6 +1001,24 @@ function ActivityPanel({ members, attempts }) {
       )}
     </div>
   );
+}
+
+function getFrequentWrongProblems(attempts) {
+  const grouped = new Map();
+  attempts
+    .filter((attempt) => attempt.status === "wrong" || attempt.wrong)
+    .forEach((attempt) => {
+      const key = `${attempt.nodeId}-${attempt.problemId}`;
+      const current = grouped.get(key) || {
+        nodeId: attempt.nodeId,
+        problemId: attempt.problemId,
+        count: 0,
+      };
+      grouped.set(key, { ...current, count: current.count + 1 });
+    });
+  return Array.from(grouped.values())
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 8);
 }
 
 const NotebookPanel = forwardRef(function NotebookPanel(
@@ -1206,7 +1288,15 @@ function ProblemAssets({ assets }) {
   );
 }
 
-function GuidePanel({ problem, guide, guideLoading, reviewCount, isAdmin, saving, onGuide, onSave }) {
+function GuidePanel({ problem, guide, guideLoading, reviewCount, answerCheck, isAdmin, saving, onGuide, onAnswerCheck, onSave }) {
+  const [answerInput, setAnswerInput] = useState("");
+  const canReview = answerCheck?.status === "wrong";
+  const canComplete = answerCheck?.status === "correct";
+
+  useEffect(() => {
+    setAnswerInput("");
+  }, [problem?.id]);
+
   return (
     <aside className="guide-panel">
       <div className="section-title">
@@ -1217,8 +1307,9 @@ function GuidePanel({ problem, guide, guideLoading, reviewCount, isAdmin, saving
       <div className="guide-actions">
         {guideActions.map((action) => {
           const Icon = action.icon;
+          const disabled = guideLoading || (action.key === "check" && !canReview);
           return (
-            <button key={action.key} onClick={() => onGuide(action)} disabled={guideLoading}>
+            <button key={action.key} onClick={() => onGuide(action)} disabled={disabled}>
               <Icon size={17} />
               {action.label}
               {action.key === "check" && <small>{Math.max(0, 3 - reviewCount)}/3</small>}
@@ -1240,12 +1331,31 @@ function GuidePanel({ problem, guide, guideLoading, reviewCount, isAdmin, saving
         </div>
       )}
 
+      <div className={`answer-check ${answerCheck?.status || ""}`}>
+        <label>
+          <span>정답 입력</span>
+          <input
+            value={answerInput}
+            onChange={(event) => setAnswerInput(event.target.value)}
+            placeholder="계산한 답"
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && answerInput.trim()) onAnswerCheck(answerInput);
+            }}
+          />
+        </label>
+        <button onClick={() => onAnswerCheck(answerInput)} disabled={saving || !answerInput.trim()}>
+          정답 확인
+        </button>
+        {answerCheck?.status === "correct" && <small>정답입니다. 해결 완료를 누르세요.</small>}
+        {answerCheck?.status === "wrong" && <small>오답입니다. 내 풀이 점검을 사용할 수 있습니다.</small>}
+      </div>
+
       <div className="save-row">
         <button onClick={() => onSave(false)} disabled={saving}>
           <Save size={17} />
           풀이 저장
         </button>
-        <button className="primary" onClick={() => onSave(true)} disabled={saving}>
+        <button className="primary" onClick={() => onSave(true)} disabled={saving || !canComplete}>
           <Brush size={17} />
           해결 완료
         </button>

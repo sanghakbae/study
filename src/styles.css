@@ -624,10 +624,10 @@ button:disabled {
 
 .leader-list li {
   display: grid;
-  grid-template-columns: 34px 1fr auto;
-  gap: 10px;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  gap: 8px;
   align-items: center;
-  padding: 9px;
+  padding: 8px;
   border-radius: 8px;
   background: #f8fafc;
 }
@@ -645,8 +645,8 @@ button:disabled {
 }
 
 .rank-badge {
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   display: grid;
   place-items: center;
   border-radius: 8px;
@@ -660,12 +660,22 @@ button:disabled {
   display: block;
 }
 
+.leader-list strong {
+  font-size: 0.82rem;
+  line-height: 1.2;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
 .leader-list small {
   color: #64748b;
+  font-size: 0.72rem;
+  line-height: 1.2;
 }
 
 .leader-list b {
   color: #0f766e;
+  font-size: 0.88rem;
 }
 
 .leader-panel {
@@ -869,6 +879,41 @@ button:disabled {
 
 .child-candidates small {
   color: #64748b;
+}
+
+.wrong-list {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.wrong-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px;
+  border-radius: 8px;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+}
+
+.wrong-row strong,
+.wrong-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wrong-row span {
+  color: #9a3412;
+  font-size: 0.74rem;
+}
+
+.wrong-row b {
+  color: #c2410c;
+  font-size: 0.82rem;
 }
 
 .child-card .positive {
@@ -1185,6 +1230,61 @@ button:disabled {
   display: block;
   margin: 4px 0;
   font-size: 1.2rem;
+}
+
+.answer-check {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+  padding: 10px;
+  border-radius: 8px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+
+.answer-check label {
+  display: grid;
+  gap: 5px;
+}
+
+.answer-check span,
+.answer-check small {
+  font-size: 0.74rem;
+  font-weight: 900;
+  color: #64748b;
+}
+
+.answer-check input {
+  width: 100%;
+  height: 36px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 0 10px;
+  font-weight: 900;
+}
+
+.answer-check button {
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 8px;
+  background: #111827;
+  color: #fff;
+  font-weight: 900;
+}
+
+.answer-check small {
+  grid-column: 1 / -1;
+}
+
+.answer-check.correct {
+  border-color: #99f6e4;
+  background: #ecfdf5;
+}
+
+.answer-check.wrong {
+  border-color: #fed7aa;
+  background: #fff7ed;
 }
 
 .save-row {

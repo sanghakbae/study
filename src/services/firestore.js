@@ -160,6 +160,7 @@ export async function loadAttemptsForUsers(userIds) {
 export async function saveAttempt({ user, problem, strokes, guide, isCorrect, status }) {
   const attemptRef = doc(collection(db, "attempts"));
   const completed = status === "completed";
+  const wrong = status === "wrong";
   const xpGain = completed ? 30 + problem.difficulty * 10 : 0;
   await setDoc(attemptRef, {
     uid: user.uid,
@@ -170,6 +171,7 @@ export async function saveAttempt({ user, problem, strokes, guide, isCorrect, st
     isCorrect: completed && isCorrect,
     status,
     saved: status === "saved",
+    wrong,
     completed,
     xpGain,
     createdAt: serverTimestamp(),
