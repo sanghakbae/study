@@ -483,6 +483,7 @@ const NotebookPanel = forwardRef(function NotebookPanel(
   const currentStrokeRef = useRef([]);
   const lastPointRef = useRef(null);
   const toolRef = useRef(tool);
+  const scrollLockYRef = useRef(0);
 
   useEffect(() => {
     toolRef.current = tool;
@@ -602,7 +603,9 @@ const NotebookPanel = forwardRef(function NotebookPanel(
 
   function startDrawing(event) {
     event.preventDefault();
+    event.stopPropagation();
     drawingRef.current = true;
+    scrollLockYRef.current = window.scrollY;
     document.body.classList.add("drawing-on-canvas");
     const point = getPoint(event);
     currentStrokeRef.current = [point];
@@ -614,6 +617,8 @@ const NotebookPanel = forwardRef(function NotebookPanel(
     updateCursor(event);
     if (!drawingRef.current) return;
     event.preventDefault();
+    event.stopPropagation();
+    if (window.scrollY !== scrollLockYRef.current) window.scrollTo(window.scrollX, scrollLockYRef.current);
     const point = getPoint(event);
     const lastPoint = lastPointRef.current;
     if (!lastPoint) {
@@ -628,8 +633,10 @@ const NotebookPanel = forwardRef(function NotebookPanel(
   function endDrawing(event) {
     if (!drawingRef.current) return;
     event?.preventDefault?.();
+    event?.stopPropagation?.();
     drawingRef.current = false;
     document.body.classList.remove("drawing-on-canvas");
+    if (window.scrollY !== scrollLockYRef.current) window.scrollTo(window.scrollX, scrollLockYRef.current);
     strokesRef.current.push({ tool: toolRef.current, points: currentStrokeRef.current });
     currentStrokeRef.current = [];
     lastPointRef.current = null;

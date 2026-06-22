@@ -157,8 +157,12 @@ button:disabled {
 
 .app-shell {
   width: 100%;
-  min-height: 100vh;
-  padding: 16px;
+  height: 100vh;
+  display: grid;
+  grid-template-rows: auto minmax(190px, 30vh) minmax(0, 1fr);
+  gap: 10px;
+  padding: 10px;
+  overflow: hidden;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(238, 242, 247, 0.96)),
     repeating-linear-gradient(90deg, transparent 0 42px, rgba(17, 24, 39, 0.03) 42px 43px);
@@ -262,7 +266,7 @@ button:disabled {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 280px;
   gap: 14px;
-  margin-top: 14px;
+  min-height: 0;
 }
 
 .skill-panel,
@@ -279,7 +283,7 @@ button:disabled {
 .skill-panel,
 .leader-panel,
 .source-band {
-  padding: 14px;
+  padding: 10px;
 }
 
 .section-title {
@@ -294,6 +298,7 @@ button:disabled {
 
 .skill-board {
   width: 100%;
+  height: calc(100% - 28px);
   display: grid;
   grid-template-columns: repeat(6, minmax(154px, 1fr));
   gap: 10px;
@@ -462,6 +467,7 @@ button:disabled {
   gap: 8px;
   margin: 0;
   padding: 0;
+  overflow: auto;
 }
 
 .leader-list li {
@@ -506,7 +512,7 @@ button:disabled {
 .workspace {
   display: grid;
   gap: 14px;
-  margin-top: 14px;
+  min-height: 0;
   align-items: stretch;
 }
 
@@ -542,8 +548,13 @@ button:disabled {
 
 .notebook-panel,
 .guide-panel {
-  min-height: 720px;
-  padding: 14px;
+  min-height: 0;
+  padding: 10px;
+}
+
+.notebook-panel {
+  display: flex;
+  flex-direction: column;
 }
 
 .problem-header {
@@ -576,8 +587,8 @@ button:disabled {
 }
 
 .problem-card {
-  margin: 12px 0;
-  padding: 14px;
+  margin: 8px 0;
+  padding: 10px;
   border-radius: 8px;
   background: #111827;
   color: #fff;
@@ -626,7 +637,7 @@ button:disabled {
 
 .tool-row {
   gap: 8px;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
   flex-wrap: wrap;
 }
 
@@ -654,8 +665,8 @@ button:disabled {
 .canvas-wrap {
   position: relative;
   width: 100%;
-  height: calc(100% - 178px);
-  min-height: 420px;
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
   border: 1px solid #cbd5e1;
   border-radius: 8px;
@@ -768,6 +779,7 @@ button:disabled {
 }
 
 .source-band {
+  display: none;
   margin-top: 14px;
 }
 
