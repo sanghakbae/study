@@ -58,6 +58,8 @@ const guideActions = [
   { key: "concept", label: "개념 다시보기", icon: BookOpen },
 ];
 
+const gradeOptions = ["중1", "중2", "중3", "고1", "고2", "고3"];
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(fallbackUser);
@@ -197,6 +199,27 @@ export default function App() {
     }
   }
 
+  async function handleCompleteOnboarding({ role, grade }) {
+    if (!user) return;
+    const nextProfile = {
+      ...profile,
+      role,
+      grade: role === "student" ? grade : "",
+      parentOf: role === "parents" ? profile.parentOf || [] : [],
+      onboardingComplete: true,
+    };
+    await updateUserRole({
+      uid: user.uid,
+      role,
+      grade: nextProfile.grade,
+      parentOf: nextProfile.parentOf,
+      onboardingComplete: true,
+    });
+    setProfile(nextProfile);
+    await refreshCatalog();
+    await refreshMembers(nextProfile);
+  }
+
   async function handleGuide(action) {
     if (action.key === "next") {
       setGuide(selectedProblem.nextStep || `## 다음 한 단계\n- ${selectedProblem.concept}`);
@@ -322,6 +345,10 @@ export default function App() {
 
   if (!user) {
     return <LoginScreen onLogin={handleLogin} />;
+  }
+
+  if (!profile.onboardingComplete && profile.role !== "admin") {
+    return <OnboardingPage user={user} profile={profile} onComplete={handleCompleteOnboarding} />;
   }
 
   if (profile.role === "admin") {
@@ -549,6 +576,59 @@ function LoginScreen({ onLogin }) {
             Google로 시작
           </button>
         </div>
+      </div>
+    </main>
+  );
+}
+
+function OnboardingPage({ user, profile, onComplete }) {
+  const [role, setRole] = useState(profile.role === "parents" ? "parents" : "student");
+  const [grade, setGrade] = useState(profile.grade || "중1");
+  const [submitting, setSubmitting] = useState(false);
+
+  async function submit() {
+    setSubmitting(true);
+    try {
+      await onComplete({ role, grade });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <main className="login-screen">
+      <div className="onboarding-panel">
+        <div className="brand-mark large">
+          <Gamepad2 size={34} />
+        </div>
+        <h1>역할 선택</h1>
+        <p>{user.displayName || user.email} 계정으로 시작합니다.</p>
+        <div className="role-grid">
+          <button className={role === "student" ? "selected" : ""} onClick={() => setRole("student")}>
+            <strong>학생</strong>
+            <span>중1 과정부터 문제를 풀고 스킬, 랭킹, 마크를 획득합니다.</span>
+          </button>
+          <button className={role === "parents" ? "selected" : ""} onClick={() => setRole("parents")}>
+            <strong>학부모</strong>
+            <span>가입한 자녀를 조회해서 추가하고 학습 활동을 모니터링합니다.</span>
+          </button>
+        </div>
+        {role === "student" && (
+          <label className="grade-picker">
+            <span>학년</span>
+            <select value={grade} onChange={(event) => setGrade(event.target.value)}>
+              {gradeOptions.map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
+            </select>
+            <small>학년은 통계용입니다. 고1이어도 중1 문제부터 순서대로 풉니다.</small>
+          </label>
+        )}
+        <button className="onboarding-submit" onClick={submit} disabled={submitting}>
+          {submitting ? "저장 중..." : "시작하기"}
+        </button>
       </div>
     </main>
   );

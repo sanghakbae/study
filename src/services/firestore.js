@@ -29,6 +29,7 @@ export async function ensureUserProfile(user) {
   const ref = doc(db, "users", user.uid);
   const snap = await getDoc(ref);
   const role = user.email === "totoriverce@gmail.com" ? "admin" : "student";
+  const isAdmin = role === "admin";
   if (!snap.exists()) {
     await setDoc(ref, {
       uid: user.uid,
@@ -36,7 +37,9 @@ export async function ensureUserProfile(user) {
       photoURL: user.photoURL || "",
       email: user.email || "",
       role,
+      grade: "",
       parentOf: [],
+      onboardingComplete: isAdmin,
       xp: 0,
       solvedCount: 0,
       masteredSkills: [],
@@ -46,7 +49,7 @@ export async function ensureUserProfile(user) {
   } else {
     await updateDoc(ref, {
       lastSeenAt: serverTimestamp(),
-      ...(user.email === "totoriverce@gmail.com" ? { role: "admin" } : {}),
+      ...(isAdmin ? { role: "admin", onboardingComplete: true } : {}),
     });
   }
   return (await getDoc(ref)).data();
@@ -108,7 +111,7 @@ export async function loadUsers() {
     .sort((a, b) => String(a.displayName || a.email || "").localeCompare(String(b.displayName || b.email || "")));
 }
 
-export async function updateUserRole({ uid, role, parentOf = [], displayName, grade, xp, solvedCount }) {
+export async function updateUserRole({ uid, role, parentOf = [], displayName, grade, xp, solvedCount, onboardingComplete }) {
   await updateDoc(doc(db, "users", uid), {
     role,
     parentOf,
@@ -116,6 +119,7 @@ export async function updateUserRole({ uid, role, parentOf = [], displayName, gr
     ...(grade != null ? { grade } : {}),
     ...(xp != null ? { xp: Number(xp) || 0 } : {}),
     ...(solvedCount != null ? { solvedCount: Number(solvedCount) || 0 } : {}),
+    ...(onboardingComplete != null ? { onboardingComplete } : {}),
     updatedAt: serverTimestamp(),
   });
 }
