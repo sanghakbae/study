@@ -820,9 +820,7 @@ function SkillTree({ skills, selectedSkillId, completedSkills, solvedBySkill, un
                     >
                       <span className="skill-icon">{skillIcons[skill.id] || "∘"}</span>
                       <strong>{skill.title}</strong>
-                      {unlocked && <small>{Math.min(50, solvedCount)}/50</small>}
-                      {selected && <em>●</em>}
-                      {completed && !selected && <em className="done">✓</em>}
+                                            {completed && !selected && <em className="done">✓</em>}
                     </button>
                   </div>
                 );
@@ -1602,7 +1600,7 @@ const NotebookPanel = forwardRef(function NotebookPanel(
       <div className="skill-progress-bar">
         <div className="skill-progress-meta">
           <span><BookOpen size={12} /> 스킬 진행도</span>
-          <strong>{Math.min(50, solvedCount)} / 50 문제</strong>
+          <strong>{Math.min(50, solvedCount)}문제 완료</strong>
         </div>
         <div className="skill-progress-track">
           <div className="skill-progress-fill" style={{ width: `${Math.min(100, solvedCount / 50 * 100)}%` }} />
