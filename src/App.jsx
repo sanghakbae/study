@@ -65,6 +65,7 @@ export default function App() {
   const [saving, setSaving] = useState(false);
   const [completedSkills, setCompletedSkills] = useState(["m1-numbers"]);
   const [tool, setTool] = useState("pen");
+  const [dataWarning, setDataWarning] = useState("");
   const notebookRef = useRef(null);
 
   const selectedSkill = useMemo(
@@ -82,21 +83,43 @@ export default function App() {
       setUser(nextUser);
       setAuthReady(true);
       if (nextUser) {
-        await ensureUserProfile(nextUser);
-        await seedCatalogIfNeeded();
-        await refreshCatalog();
+        setProfile({
+          uid: nextUser.uid,
+          displayName: nextUser.displayName || "수학 러너",
+          photoURL: nextUser.photoURL || "",
+          email: nextUser.email || "",
+          xp: 0,
+          solvedCount: 0,
+        });
+        try {
+          await ensureUserProfile(nextUser);
+          await seedCatalogIfNeeded();
+          await refreshCatalog();
+          setDataWarning("");
+        } catch (error) {
+          console.error(error);
+          setDataWarning(`Firestore 연결/권한 확인 필요: ${error.message}`);
+        }
       }
     });
   }, []);
 
   useEffect(() => {
     if (!user) return;
-    loadProblemsBySkill(selectedSkillId).then((items) => {
-      const nextProblems = items.length ? items : sampleProblems.filter((item) => item.nodeId === selectedSkillId);
-      setProblems(nextProblems);
-      setSelectedProblemId(nextProblems[0]?.id || "");
-      setGuide("새 문제를 열었습니다. 풀이를 쓰고 필요한 순간에 가이드를 요청하세요.");
-    });
+    loadProblemsBySkill(selectedSkillId)
+      .then((items) => {
+        const nextProblems = items.length ? items : sampleProblems.filter((item) => item.nodeId === selectedSkillId);
+        setProblems(nextProblems);
+        setSelectedProblemId(nextProblems[0]?.id || "");
+        setGuide("새 문제를 열었습니다. 풀이를 쓰고 필요한 순간에 가이드를 요청하세요.");
+      })
+      .catch((error) => {
+        console.error(error);
+        const nextProblems = sampleProblems.filter((item) => item.nodeId === selectedSkillId);
+        setProblems(nextProblems);
+        setSelectedProblemId(nextProblems[0]?.id || "");
+        setDataWarning(`문제 DB를 읽지 못해 내장 샘플로 표시 중: ${error.message}`);
+      });
   }, [selectedSkillId, user]);
 
   async function refreshCatalog() {
@@ -111,7 +134,11 @@ export default function App() {
   }
 
   async function handleLogin() {
-    await signInWithPopup(auth, googleProvider);
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } catch (error) {
+      alert(`Google 로그인 실패: ${error.message}`);
+    }
   }
 
   async function handleGuide(action) {
@@ -155,6 +182,9 @@ export default function App() {
         setCompletedSkills((items) => Array.from(new Set([...items, selectedSkillId])));
       }
       await refreshCatalog();
+    } catch (error) {
+      console.error(error);
+      setGuide(`저장 실패: ${error.message}`);
     } finally {
       setSaving(false);
     }
@@ -182,6 +212,7 @@ export default function App() {
 
   return (
     <main className="app-shell">
+      {dataWarning && <div className="warning-bar">{dataWarning}</div>}
       <header className="topbar">
         <div className="brand-block">
           <div className="brand-mark">
