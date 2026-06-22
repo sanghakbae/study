@@ -64,10 +64,16 @@ export default function App() {
   const [guide, setGuide] = useState("문제를 고르고 노트에 풀이를 시작하세요. 막히는 순간 오른쪽 버튼으로 힌트를 받을 수 있습니다.");
   const [guideLoading, setGuideLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [completedSkills, setCompletedSkills] = useState(["m1-numbers"]);
+  const [solvedBySkill, setSolvedBySkill] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("study-solved-by-skill") || "{}");
+    } catch {
+      return {};
+    }
+  });
   const [tool, setTool] = useState("pen");
   const [dataWarning, setDataWarning] = useState("");
-  const [noteRatio, setNoteRatio] = useState(72);
+  const [noteRatio, setNoteRatio] = useState(68);
   const notebookRef = useRef(null);
   const workspaceRef = useRef(null);
 
@@ -82,6 +88,7 @@ export default function App() {
   );
 
   useEffect(() => {
+    localStorage.removeItem("study-note-ratio");
     return onAuthStateChanged(auth, async (nextUser) => {
       setUser(nextUser);
       setAuthReady(true);
@@ -132,7 +139,6 @@ export default function App() {
     const me = loadedLeaders.find((item) => item.uid === auth.currentUser?.uid);
     if (me) {
       setProfile(me);
-      setCompletedSkills(me.masteredSkills?.length ? me.masteredSkills : ["m1-numbers"]);
     }
   }
 
@@ -182,7 +188,11 @@ export default function App() {
       });
       setGuide(`저장 완료. ${result.xpGain} XP를 획득했습니다.`);
       if (isCorrect) {
-        setCompletedSkills((items) => Array.from(new Set([...items, selectedSkillId])));
+        setSolvedBySkill((current) => {
+          const solved = new Set(current[selectedSkillId] || []);
+          solved.add(selectedProblem.id);
+          return { ...current, [selectedSkillId]: Array.from(solved) };
+        });
       }
       await refreshCatalog();
     } catch (error) {
@@ -193,13 +203,23 @@ export default function App() {
     }
   }
 
+  const completedSkills = useMemo(() => {
+    return skills
+      .filter((skill) => (solvedBySkill[skill.id]?.length || 0) >= 50)
+      .map((skill) => skill.id);
+  }, [skills, solvedBySkill]);
+
   const unlockedSkills = useMemo(() => {
     return new Set(
       skills
-        .filter((skill) => skill.prereq.every((id) => completedSkills.includes(id)))
+        .filter((skill) => skill.id === "m1-numbers" || skill.prereq.every((id) => completedSkills.includes(id)))
         .map((skill) => skill.id),
     );
   }, [skills, completedSkills]);
+
+  useEffect(() => {
+    localStorage.setItem("study-solved-by-skill", JSON.stringify(solvedBySkill));
+  }, [solvedBySkill]);
 
   if (!authReady) {
     return (
@@ -247,6 +267,7 @@ export default function App() {
           skills={skills}
           selectedSkillId={selectedSkillId}
           completedSkills={completedSkills}
+          solvedBySkill={solvedBySkill}
           unlockedSkills={unlockedSkills}
           onSelect={setSelectedSkillId}
         />
@@ -256,7 +277,7 @@ export default function App() {
       <section
         className="workspace"
         ref={workspaceRef}
-        style={{ gridTemplateColumns: `${noteRatio}fr 12px ${100 - noteRatio}fr` }}
+        style={{ gridTemplateColumns: `minmax(0, ${noteRatio}%) 12px minmax(420px, 1fr)` }}
       >
         <NotebookPanel
           ref={notebookRef}
@@ -303,13 +324,14 @@ export default function App() {
 function ResizeHandle({ workspaceRef, onResize }) {
   function startResize(event) {
     event.preventDefault();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
     const workspace = workspaceRef.current;
     if (!workspace) return;
     const rect = workspace.getBoundingClientRect();
 
     const move = (moveEvent) => {
       const raw = ((moveEvent.clientX - rect.left) / rect.width) * 100;
-      onResize(Math.min(82, Math.max(48, raw)));
+      onResize(Math.min(74, Math.max(52, raw)));
     };
     const stop = () => {
       window.removeEventListener("pointermove", move);
@@ -323,7 +345,13 @@ function ResizeHandle({ workspaceRef, onResize }) {
   }
 
   return (
-    <button className="resize-handle" onPointerDown={startResize} aria-label="노트와 가이드 폭 조절">
+    <button
+      className="resize-handle"
+      onDoubleClick={() => onResize(68)}
+      onPointerDown={startResize}
+      aria-label="노트와 가이드 폭 조절"
+      title="드래그해서 좌우 폭 조절, 더블클릭 초기화"
+    >
       <span />
     </button>
   );
@@ -353,7 +381,7 @@ function LoginScreen({ onLogin }) {
   );
 }
 
-function SkillTree({ skills, selectedSkillId, completedSkills, unlockedSkills, onSelect }) {
+function SkillTree({ skills, selectedSkillId, completedSkills, solvedBySkill, unlockedSkills, onSelect }) {
   const stageOrder = ["중1", "중2", "중3", "고1", "고2", "고3"];
   const groupedSkills = stageOrder.map((stage) => ({
     stage,
@@ -378,6 +406,7 @@ function SkillTree({ skills, selectedSkillId, completedSkills, unlockedSkills, o
                 const unlocked = unlockedSkills.has(skill.id);
                 const selected = selectedSkillId === skill.id;
                 const pending = unlocked && !completed;
+                const solvedCount = solvedBySkill[skill.id]?.length || 0;
                 return (
                   <button
                     className={`skill-node ${selected ? "selected" : ""} ${completed ? "completed" : ""} ${pending ? "pending" : ""} ${!unlocked ? "locked" : ""}`}
@@ -392,6 +421,7 @@ function SkillTree({ skills, selectedSkillId, completedSkills, unlockedSkills, o
                     <span className="skill-unit">{skill.unit}</span>
                     <strong>{skill.title}</strong>
                     {selected && <em>진행 중</em>}
+                    {unlocked && <small>{Math.min(50, solvedCount)}/50</small>}
                   </button>
                 );
               })}

@@ -346,7 +346,7 @@ button:disabled {
   gap: 0 6px;
   align-items: center;
   text-align: left;
-  padding: 5px 7px;
+  padding: 5px 56px 5px 7px;
   border: 1px solid #94a3b8;
   border-radius: 8px;
   background:
@@ -417,15 +417,29 @@ button:disabled {
 
 .skill-node em {
   position: absolute;
-  right: 6px;
-  top: 5px;
-  padding: 2px 5px;
+  right: 7px;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 2px 6px;
   border-radius: 999px;
   background: #111827;
   color: #fff;
   font-size: 0.62rem;
   font-style: normal;
   font-weight: 900;
+}
+
+.skill-node small {
+  position: absolute;
+  right: 7px;
+  bottom: 4px;
+  color: #64748b;
+  font-size: 0.64rem;
+  font-weight: 900;
+}
+
+.skill-node.selected small {
+  color: #0f766e;
 }
 
 @media (max-width: 900px) {
@@ -535,13 +549,13 @@ button:disabled {
 .problem-header span {
   display: block;
   color: #64748b;
-  font-size: 0.82rem;
+  font-size: 0.7rem;
   font-weight: 800;
 }
 
 .problem-header h2 {
   margin: 2px 0 0;
-  font-size: clamp(1.15rem, 2vw, 1.8rem);
+  font-size: clamp(1.02rem, 1.8vw, 1.67rem);
 }
 
 .problem-header select {
@@ -570,7 +584,7 @@ button:disabled {
 
 .problem-card p {
   margin: 7px 0 0;
-  font-size: clamp(1.05rem, 2.2vw, 1.55rem);
+  font-size: clamp(0.92rem, 2vw, 1.42rem);
   line-height: 1.45;
 }
 
@@ -622,6 +636,7 @@ button:disabled {
   background: #e5e7eb;
   color: #111827;
   font-weight: 900;
+  font-size: 0.875rem;
 }
 
 .tool-row button.active {
