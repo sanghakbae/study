@@ -20,10 +20,13 @@ import {
   PenLine,
   RefreshCw,
   Save,
+  Search,
   ShieldCheck,
   Sparkles,
   Trophy,
+  TrendingUp,
   UserRound,
+  Users,
   Wand2,
 } from "lucide-react";
 import { onAuthStateChanged, signInWithPopup, signOut } from "firebase/auth";
@@ -34,7 +37,9 @@ import {
   loadAttemptsForUsers,
   loadLeaderboard,
   loadProblemsBySkill,
+  loadProgressForUser,
   loadSkills,
+  loadUserProfile,
   loadUsers,
   saveAttempt,
   seedCatalogIfNeeded,
@@ -53,9 +58,9 @@ const fallbackUser = {
 };
 
 const guideActions = [
+  { key: "check", label: "AI 가이드", icon: ShieldCheck },
   { key: "next", label: "풀이 방향", icon: ChevronRight },
   { key: "hint", label: "힌트 받기", icon: HelpCircle },
-  { key: "check", label: "내 풀이 점검", icon: ShieldCheck },
   { key: "concept", label: "개념 다시보기", icon: BookOpen },
 ];
 
@@ -74,8 +79,10 @@ export default function App() {
   const [activityAttempts, setActivityAttempts] = useState([]);
   const [guide, setGuide] = useState("문제를 고르고 노트에 풀이를 시작하세요. 막히는 순간 오른쪽 버튼으로 힌트를 받을 수 있습니다.");
   const [guideLoading, setGuideLoading] = useState(false);
+  const [pendingRole, setPendingRole] = useState(null);
   const [saving, setSaving] = useState(false);
   const [answerChecks, setAnswerChecks] = useState({});
+  const [hintUsed, setHintUsed] = useState({});
   const [reviewCounts, setReviewCounts] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem("study-review-counts") || "{}");
@@ -143,29 +150,39 @@ export default function App() {
 
   useEffect(() => {
     if (!user) return;
+    const skill = skills.find((s) => s.id === selectedSkillId) || curriculumNodes.find((s) => s.id === selectedSkillId);
     loadProblemsBySkill(selectedSkillId)
       .then((items) => {
-        const nextProblems = items.length >= 50 ? items : getFallbackProblems(selectedSkill);
+        const nextProblems = items.length >= 50 ? items : getFallbackProblems(skill);
         setProblems(nextProblems);
         setSelectedProblemId(nextProblems[0]?.id || "");
         setGuide("새 문제를 열었습니다. 풀이를 쓰고 필요한 순간에 가이드를 요청하세요.");
       })
       .catch((error) => {
         console.error(error);
-        const nextProblems = getFallbackProblems(selectedSkill);
+        const nextProblems = getFallbackProblems(skill);
         setProblems(nextProblems);
         setSelectedProblemId(nextProblems[0]?.id || "");
         setDataWarning("");
       });
-  }, [selectedSkillId, selectedSkill, user]);
+  }, [selectedSkillId, user]);
 
   async function refreshCatalog() {
-    const [loadedSkills, loadedLeaders] = await Promise.all([loadSkills(), loadLeaderboard()]);
+    const uid = auth.currentUser?.uid;
+    const [loadedSkills, loadedLeaders, progressMap] = await Promise.all([
+      loadSkills(),
+      loadLeaderboard(),
+      uid ? loadProgressForUser(uid) : Promise.resolve({}),
+    ]);
     if (loadedSkills.length) setSkills(loadedSkills);
-    setLeaderboard(loadedLeaders);
-    const me = loadedLeaders.find((item) => item.uid === auth.currentUser?.uid);
-    if (me) {
-      setProfile(me);
+    setLeaderboard(loadedLeaders.filter((u) => u.isMock || (u.role === "student" && u.onboardingComplete)));
+    let me = loadedLeaders.find((item) => item.uid === uid);
+    if (!me && uid) {
+      me = await loadUserProfile(uid);
+    }
+    if (me) setProfile(me);
+    if (Object.keys(progressMap).length > 0) {
+      setSolvedBySkill(progressMap);
     }
   }
 
@@ -193,11 +210,17 @@ export default function App() {
     });
   }, [profile.role, profile.parentOf, user]);
 
-  async function handleLogin() {
+  async function handleLogin(role) {
+    setPendingRole(role);
     try {
       await signInWithPopup(auth, googleProvider);
     } catch (error) {
-      alert(`Google 로그인 실패: ${error.message}`);
+      setPendingRole(null);
+      if (error.code === "auth/popup-blocked") {
+        alert("팝업이 차단됐습니다.\n브라우저 주소창 오른쪽의 팝업 허용 아이콘을 클릭한 뒤 다시 시도해주세요.");
+      } else if (error.code !== "auth/popup-closed-by-user") {
+        alert(`Google 로그인 실패: ${error.message}`);
+      }
     }
   }
 
@@ -216,18 +239,25 @@ export default function App() {
     await refreshMembers(nextProfile);
   }
 
+  function trackHintUse(problemId) {
+    setHintUsed((current) => ({ ...current, [problemId]: (current[problemId] || 0) + 1 }));
+  }
+
   async function handleGuide(action) {
     if (action.key === "next") {
+      trackHintUse(selectedProblem.id);
       setGuide(selectedProblem.nextStep || `## 다음 한 단계\n- ${selectedProblem.concept}`);
       return;
     }
 
     if (action.key === "hint") {
+      trackHintUse(selectedProblem.id);
       setGuide(selectedProblem.hint || `## 힌트\n- ${selectedProblem.concept}`);
       return;
     }
 
     if (action.key === "concept") {
+      trackHintUse(selectedProblem.id);
       setGuide(selectedProblem.conceptGuide || `## 개념 다시보기\n- ${selectedProblem.concept}`);
       return;
     }
@@ -246,9 +276,11 @@ export default function App() {
       return;
     }
 
+    trackHintUse(selectedProblem.id);
     setGuideLoading(true);
     setGuide(`${action.label} 요청 중...`);
     try {
+      const canvasImage = notebookRef.current?.exportCanvasImage?.() || null;
       const response = await fetch("/api/guide", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -256,6 +288,7 @@ export default function App() {
           action: action.label,
           problem: selectedProblem,
           noteSummary: notebookRef.current?.getStrokeSummary?.() || "",
+          canvasImage,
         }),
       });
       const data = await response.json();
@@ -292,27 +325,37 @@ export default function App() {
 
   async function handleSaveAttempt(completed) {
     if (!user || !selectedProblem) return;
+    const problem = selectedProblem;
     setSaving(true);
+
+    const alreadySolved = (solvedBySkill[selectedSkillId] || []).includes(problem.id);
+    const hints = hintUsed[problem.id] || 0;
+    const xpMultiplier = Math.max(0.3, 1 - hints * 0.05);
+
+    if (completed) {
+      markProblemCompleted(problem.id);
+      advanceToNextProblem(problem.id);
+    }
+
     try {
       await saveAttempt({
         user,
-        problem: selectedProblem,
+        problem,
         strokes: notebookRef.current?.exportStrokes?.() || [],
         guide,
         isCorrect: completed,
         status: completed ? "completed" : "saved",
+        alreadySolved,
+        xpMultiplier,
       });
-      if (completed) {
-        markProblemCompleted(selectedProblem.id);
-        advanceToNextProblem(selectedProblem.id);
-      } else {
+      if (!completed) {
         setGuide("풀이가 저장됐습니다. 해결 완료를 눌러야 다음 문제로 넘어갑니다.");
       }
       await refreshCatalog();
       await refreshMembers();
     } catch (error) {
       console.error(error);
-      setGuide(`저장 실패: ${error.message}`);
+      if (!completed) setGuide(`저장 실패: ${error.message}`);
     } finally {
       setSaving(false);
     }
@@ -327,7 +370,7 @@ export default function App() {
   }
 
   async function handleAnswerCheck(inputAnswer) {
-    if (!user || !selectedProblem) return;
+    if (!user || !selectedProblem) return false;
     const correct = normalizeAnswer(inputAnswer) === normalizeAnswer(selectedProblem.answer);
     setAnswerChecks((current) => ({
       ...current,
@@ -339,7 +382,7 @@ export default function App() {
 
     if (correct) {
       setGuide("정답입니다. 풀이 점검 없이 해결 완료를 눌러 다음 문제로 넘어가세요.");
-      return;
+      return true;
     }
 
     setGuide("정답이 아닙니다. 내 풀이 점검을 눌러 어디서 어긋났는지 확인하세요.");
@@ -357,6 +400,7 @@ export default function App() {
       console.error(error);
       setGuide(`오답 기록 저장 실패: ${error.message}`);
     }
+    return false;
   }
 
   const completedSkills = useMemo(() => {
@@ -390,7 +434,7 @@ export default function App() {
   }
 
   if (!profile.onboardingComplete && profile.role !== "admin") {
-    return <OnboardingPage user={user} profile={profile} onComplete={handleCompleteOnboarding} />;
+    return <OnboardingPage user={user} profile={profile} initialRole={pendingRole} onComplete={handleCompleteOnboarding} />;
   }
 
   if (profile.role === "admin") {
@@ -447,7 +491,7 @@ export default function App() {
           unlockedSkills={unlockedSkills}
           onSelect={setSelectedSkillId}
         />
-        <Leaderboard leaders={leaderboard} currentUid={user.uid} />
+        <Leaderboard leaders={leaderboard} currentUid={user.uid} profile={profile} />
       </section>
 
       <section
@@ -464,6 +508,12 @@ export default function App() {
           selectedProblem={selectedProblem}
           selectedProblemId={selectedProblemId}
           setSelectedProblemId={setSelectedProblemId}
+          answerCheck={answerChecks[selectedProblem.id]}
+          saving={saving}
+          solvedCount={solvedBySkill[selectedSkillId]?.length || 0}
+          hintCount={hintUsed[selectedProblem?.id] || 0}
+          onAnswerCheck={handleAnswerCheck}
+          onSave={handleSaveAttempt}
         />
 
         <ResizeHandle workspaceRef={workspaceRef} onResize={setNoteRatio} />
@@ -475,10 +525,7 @@ export default function App() {
           reviewCount={reviewCounts[selectedProblem.id] || 0}
           answerCheck={answerChecks[selectedProblem.id]}
           isAdmin={profile.role === "admin"}
-          saving={saving}
           onGuide={handleGuide}
-          onAnswerCheck={handleAnswerCheck}
-          onSave={handleSaveAttempt}
         />
       </section>
 
@@ -527,9 +574,8 @@ function ParentPage({ user, profile, members, attempts, leaders, onRegisterChild
     <main className="app-shell parent-shell">
       <Topbar user={user} profile={profile} />
       <section className="parent-layout">
-        <ParentInsightPanel profile={profile} members={members} onRegisterChild={onRegisterChild} />
+        <ParentInsightPanel profile={profile} members={members} attempts={attempts} onRegisterChild={onRegisterChild} />
         <Leaderboard leaders={leaders} currentUid={user.uid} />
-        <ActivityPanel members={members} attempts={attempts} />
       </section>
     </main>
   );
@@ -615,18 +661,24 @@ function LoginScreen({ onLogin }) {
           </div>
           <h1>Study Math Arena</h1>
           <p>교과 흐름을 따라 스킬을 열고, 풀이 노트와 AI 튜터로 경쟁하는 수학 학습장.</p>
-          <button className="google-button" onClick={onLogin}>
-            <UserRound size={18} />
-            Google로 시작
-          </button>
+          <div className="role-grid">
+            <button onClick={() => onLogin("student")}>
+              <strong>학생</strong>
+              <span>중1 과정부터 문제를 풀고 스킬, 랭킹, 마크를 획득합니다.</span>
+            </button>
+            <button onClick={() => onLogin("parents")}>
+              <strong>학부모</strong>
+              <span>가입한 자녀를 조회해서 추가하고 학습 활동을 모니터링합니다.</span>
+            </button>
+          </div>
         </div>
       </div>
     </main>
   );
 }
 
-function OnboardingPage({ user, profile, onComplete }) {
-  const [role, setRole] = useState(profile.role === "parents" ? "parents" : "student");
+function OnboardingPage({ user, profile, initialRole, onComplete }) {
+  const [role, setRole] = useState(initialRole || (profile.role === "parents" ? "parents" : "student"));
   const [grade, setGrade] = useState(profile.grade || "중1");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -684,6 +736,51 @@ function OnboardingPage({ user, profile, onComplete }) {
   );
 }
 
+const skillIcons = {
+  "m1-numbers": "±",
+  "m1-expressions": "x",
+  "m1-equations": "=",
+  "m1-coordinates": "↗",
+  "m1-geometry-basic": "△",
+  "m1-plane-solid": "◻",
+  "m1-statistics": "≡",
+  "m2-rational": "÷",
+  "m2-polynomial": "x²",
+  "m2-linear-system": "‖",
+  "m2-inequality": "<",
+  "m2-functions": "∕",
+  "m2-geometry": "∠",
+  "m2-similarity": "∼",
+  "m2-probability": "P",
+  "m3-real-roots": "√",
+  "m3-polynomial": "×",
+  "m3-quadratic": "²",
+  "m3-quadratic-function": "∪",
+  "m3-pythagorean": "c²",
+  "m3-circle": "○",
+  "m3-statistics": "σ",
+  "h-common-polynomial": "∏",
+  "h-common-equations": "≠",
+  "h-common-functions": "f",
+  "h-common-geometry": "□",
+  "h-common-combinatorics": "C",
+  "h-math1-exponential-log": "eˣ",
+  "h-math1-trigonometry": "sin",
+  "h-math1-sequence": "Σ",
+  "h-math2-limits": "lim",
+  "h-math2-differential": "∂",
+  "h-math2-integral": "∫",
+  "h-calculus-sequence-limit": "∞",
+  "h-calculus-differential": "d/dx",
+  "h-calculus-integral": "∬",
+  "h-geometry-conic": "⊙",
+  "h-geometry-vector": "→",
+  "h-geometry-space": "⟨⟩",
+  "h-probability-counting": "n!",
+  "h-probability": "P(A)",
+  "h-statistics": "μ",
+};
+
 function SkillTree({ skills, selectedSkillId, completedSkills, solvedBySkill, unlockedSkills, onSelect }) {
   const stageOrder = ["중1", "중2", "중3", "고1", "고2", "고3"];
   const groupedSkills = stageOrder.map((stage) => ({
@@ -700,58 +797,97 @@ function SkillTree({ skills, selectedSkillId, completedSkills, solvedBySkill, un
         <h2>스킬 트리</h2>
       </div>
       <div className="skill-board">
-        {groupedSkills.map((group) => (
-          <div className="skill-stage" key={group.stage}>
+        {groupedSkills.map((group) => {
+          const stageClass = { "중1":"s-m1","중2":"s-m2","중3":"s-m3","고1":"s-h1","고2":"s-h2","고3":"s-h3" }[group.stage] || "";
+          return (
+          <div className={`skill-stage ${stageClass}`} key={group.stage}>
             <div className="skill-stage-header">{group.stage}</div>
             <div className="skill-stage-list">
-              {group.skills.map((skill) => {
+              {group.skills.map((skill, idx) => {
                 const completed = completedSkills.includes(skill.id);
                 const unlocked = unlockedSkills.has(skill.id);
                 const selected = selectedSkillId === skill.id;
                 const pending = unlocked && !completed;
                 const solvedCount = solvedBySkill[skill.id]?.length || 0;
                 return (
-                  <button
-                    className={`skill-node ${selected ? "selected" : ""} ${completed ? "completed" : ""} ${pending ? "pending" : ""} ${!unlocked ? "locked" : ""}`}
-                    key={skill.id}
-                    disabled={!unlocked}
-                    onClick={() => onSelect(skill.id)}
-                    title={skill.title}
-                  >
-                    <span className="skill-state">
-                      {unlocked ? completed ? <CheckCircle2 size={15} /> : <Sparkles size={15} /> : <Lock size={15} />}
-                    </span>
-                    <span className="skill-unit">{skill.unit}</span>
-                    <strong>{skill.title}</strong>
-                    {selected && <em>진행 중</em>}
-                    {unlocked && <small>{Math.min(50, solvedCount)}/50</small>}
-                  </button>
+                  <div className="skill-node-wrap" key={skill.id}>
+                    {idx > 0 && <div className="skill-link" />}
+                    <button
+                      className={`skill-node ${selected ? "selected" : ""} ${completed ? "completed" : ""} ${pending ? "pending" : ""} ${!unlocked ? "locked" : ""}`}
+                      disabled={!unlocked}
+                      onClick={() => onSelect(skill.id)}
+                      title={skill.title}
+                    >
+                      <span className="skill-icon">{skillIcons[skill.id] || "∘"}</span>
+                      <strong>{skill.title}</strong>
+                      {unlocked && <small>{Math.min(50, solvedCount)}/50</small>}
+                      {selected && <em>●</em>}
+                      {completed && !selected && <em className="done">✓</em>}
+                    </button>
+                  </div>
                 );
               })}
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
     </section>
   );
 }
 
-function Leaderboard({ leaders, currentUid }) {
+function Leaderboard({ leaders, currentUid, profile }) {
+  const myRank = leaders.findIndex((l) => l.uid === currentUid) + 1;
+  const xp = profile?.xp || 0;
+  const solved = profile?.solvedCount || 0;
+  const level = Math.floor(xp / 200) + 1;
+  const xpPct = Math.min(100, Math.round((xp % 200) / 200 * 100));
+
   return (
     <section className="leader-panel">
       <div className="section-title">
         <Crown size={18} />
         <h2>랭킹</h2>
       </div>
+
+      {/* My stats card */}
+      <div className="my-stats-card">
+        <div className="my-stats-row">
+          <div className="my-stat">
+            <span>{xp.toLocaleString()}</span>
+            <label>XP</label>
+          </div>
+          <div className="my-stat">
+            <span>{solved}</span>
+            <label>문제 해결</label>
+          </div>
+          <div className="my-stat">
+            <span>{myRank > 0 ? `#${myRank}` : "-"}</span>
+            <label>순위</label>
+          </div>
+        </div>
+        <div className="xp-bar-wrap">
+          <div className="xp-bar-track">
+            <div className="xp-bar-fill" style={{ width: `${xpPct}%` }} />
+          </div>
+          <small>Lv.{level} &nbsp;·&nbsp; {xp % 200} / 200 XP → Lv.{level + 1}</small>
+        </div>
+      </div>
+
       <ol className="leader-list">
         {leaders.length ? leaders.slice(0, 6).map((leader, index) => (
           <li key={leader.uid} className={leader.uid === currentUid ? "me" : ""}>
-            <span className="rank-badge">{index < 3 ? <Medal size={15} /> : index + 1}</span>
+            <span className="rank-num">{index < 3 ? <Medal size={14} /> : index + 1}</span>
+            {leader.photoURL && (
+              <div className="leader-avatar">
+                <img src={leader.photoURL} alt="" referrerPolicy="no-referrer" />
+              </div>
+            )}
             <div>
               <strong>{formatStudentName(leader)}</strong>
               <small>{leader.solvedCount || 0}문제 해결</small>
             </div>
-            <b>{leader.xp || 0}</b>
+            <b>{leader.xp || 0} XP</b>
           </li>
         )) : <li className="empty-row">아직 랭킹 데이터가 없습니다.</li>}
       </ol>
@@ -762,6 +898,14 @@ function Leaderboard({ leaders, currentUid }) {
 function formatStudentName(member) {
   const name = member?.displayName || "러너";
   return member?.grade ? `${name} (${member.grade})` : name;
+}
+
+function maskName(name) {
+  if (!name) return "러너";
+  const chars = [...name];
+  if (chars.length <= 1) return name;
+  if (chars.length === 2) return chars[0] + "*";
+  return chars[0] + "*".repeat(chars.length - 2) + chars[chars.length - 1];
 }
 
 function MemberManager({ members, onRoleUpdate }) {
@@ -776,6 +920,7 @@ function MemberManager({ members, onRoleUpdate }) {
       grade: patch.grade,
       xp: patch.xp,
       solvedCount: patch.solvedCount,
+      resetProgress: patch.resetProgress,
     });
   }
 
@@ -806,6 +951,7 @@ function MemberManager({ members, onRoleUpdate }) {
                 <th>등급</th>
                 <th>XP</th>
                 <th>해결</th>
+                <th>초기화</th>
                 <th>권한</th>
                 <th>자녀</th>
               </tr>
@@ -851,6 +997,15 @@ function MemberManager({ members, onRoleUpdate }) {
                     />
                   </td>
                   <td>
+                    <button
+                      style={{ fontSize: "0.7rem", padding: "2px 6px", background: "#c0392b", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer" }}
+                      onClick={async () => {
+                        if (!window.confirm(`${member.displayName || member.email} 의 XP와 풀이 기록을 모두 초기화합니까?`)) return;
+                        await saveMember(member, { xp: 0, solvedCount: 0, resetProgress: true });
+                      }}
+                    >초기화</button>
+                  </td>
+                  <td>
                     <select value={member.role || "student"} onChange={(event) => handleRoleChange(member, event.target.value)}>
                       <option value="student">student</option>
                       <option value="parents">parents</option>
@@ -883,7 +1038,7 @@ function MemberManager({ members, onRoleUpdate }) {
   );
 }
 
-function ParentInsightPanel({ profile, members, onRegisterChild }) {
+function ParentInsightPanel({ profile, members, attempts, onRegisterChild }) {
   const [childQuery, setChildQuery] = useState("");
   const students = members
     .filter((member) => member.role === "student")
@@ -905,60 +1060,162 @@ function ParentInsightPanel({ profile, members, onRegisterChild }) {
 
   return (
     <div className="parent-insight">
-      <h3>자녀 학습 비교</h3>
+      <div className="section-title">
+        <Users size={18} />
+        <h2>자녀 학습 현황</h2>
+      </div>
+
       {onRegisterChild && (
         <div className="child-register">
-          <label>
-            <span>가입한 자녀 조회</span>
+          <div className="child-search-wrap">
+            <Search size={15} className="child-search-icon" />
             <input
               value={childQuery}
               onChange={(event) => setChildQuery(event.target.value)}
-              placeholder="자녀 이름 또는 이메일"
+              placeholder="자녀 이름 또는 이메일로 검색"
             />
-          </label>
-          <div className="child-candidates">
-            {candidates.map((student) => (
-              <button
-                key={student.uid}
-                onClick={() => {
-                  onRegisterChild(student.uid);
-                  setChildQuery("");
-                }}
-              >
-                <strong>{formatStudentName(student)}</strong>
-                <small>{student.email}</small>
-              </button>
-            ))}
-            {childQuery.trim() && !candidates.length && <p>가입된 학생 중 일치하는 자녀가 없습니다.</p>}
           </div>
+          {candidates.length > 0 && (
+            <div className="child-candidates">
+              {candidates.map((student) => (
+                <button
+                  key={student.uid}
+                  onClick={() => {
+                    onRegisterChild(student.uid);
+                    setChildQuery("");
+                  }}
+                >
+                  <div className="candidate-avatar"><UserRound size={14} /></div>
+                  <span>{maskName(student.displayName)}</span>
+                  {student.grade && <em>{student.grade}</em>}
+                </button>
+              ))}
+            </div>
+          )}
+          {childQuery.trim() && !candidates.length && (
+            <p className="child-empty">일치하는 학생이 없습니다.</p>
+          )}
         </div>
       )}
-      {children.length ? (
-        children.map((child) => {
+
+      <div className="child-list">
+        {children.length ? children.map((child) => {
           const rankIndex = students.findIndex((student) => student.uid === child.uid);
           const above = rankIndex > 0 ? students[rankIndex - 1] : null;
           const xpDiff = (child.xp || 0) - avgXp;
           const solvedDiff = (child.solvedCount || 0) - avgSolved;
           return (
             <div className="child-card" key={child.uid}>
-              <strong>{formatStudentName(child)}</strong>
-              <span>전체 {rankIndex + 1}위 · {child.xp || 0} XP · {child.solvedCount || 0}문제</span>
-              <div className="comparison-grid">
-                <small className={xpDiff >= 0 ? "positive" : "negative"}>
-                  평균 XP 대비 {formatSignedNumber(xpDiff)}
-                </small>
-                <small className={solvedDiff >= 0 ? "positive" : "negative"}>
-                  평균 해결 수 대비 {formatSignedNumber(solvedDiff)}
-                </small>
-                <small>
-                  {above ? `위 학생까지 ${Math.max(0, (above.xp || 0) - (child.xp || 0))} XP` : "현재 1위"}
-                </small>
+              <div className="child-card-header">
+                <div className="child-avatar"><UserRound size={18} /></div>
+                <div className="child-name-block">
+                  <strong>{formatStudentName(child)}</strong>
+                  <span className="child-rank">전체 {rankIndex + 1}위</span>
+                </div>
               </div>
+              <div className="child-stats">
+                <div className="child-stat">
+                  <span>{child.xp || 0}</span>
+                  <label>XP</label>
+                </div>
+                <div className="child-stat">
+                  <span>{child.solvedCount || 0}</span>
+                  <label>문제 해결</label>
+                </div>
+                <div className={`child-stat ${xpDiff >= 0 ? "positive" : "negative"}`}>
+                  <span>{formatSignedNumber(xpDiff)}</span>
+                  <label>평균 XP 대비</label>
+                </div>
+                <div className={`child-stat ${solvedDiff >= 0 ? "positive" : "negative"}`}>
+                  <span>{formatSignedNumber(solvedDiff)}</span>
+                  <label>평균 해결 수 대비</label>
+                </div>
+              </div>
+              {above && (
+                <div className="child-gap">
+                  <TrendingUp size={13} />
+                  위 학생까지 {Math.max(0, (above.xp || 0) - (child.xp || 0))} XP
+                </div>
+              )}
+              {!above && <div className="child-gap top">🏆 현재 1위</div>}
             </div>
           );
-        })
-      ) : (
-        <p>자녀를 선택하면 학습 통계와 다른 학생 대비 차이가 표시됩니다.</p>
+        }) : (
+          <div className="child-empty-state">
+            <Users size={32} />
+            <p>위 검색창에서 자녀를 추가하면<br />학습 통계가 여기에 표시됩니다.</p>
+          </div>
+        )}
+      </div>
+
+      {children.length > 0 && (
+        <div className="child-activity-section">
+          <div className="section-title" style={{ marginTop: "16px" }}>
+            <BookOpen size={18} />
+            <h2>자녀 학습 기록</h2>
+          </div>
+          <ChildActivityLog children={children} attempts={attempts} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ChildActivityLog({ children, attempts }) {
+  const childIds = new Set(children.map((c) => c.uid));
+  const childName = new Map(children.map((c) => [c.uid, formatStudentName(c)]));
+  const childAttempts = attempts.filter((a) => childIds.has(a.uid)).slice(0, 20);
+  const wrongByChild = new Map();
+  attempts
+    .filter((a) => childIds.has(a.uid) && (a.status === "wrong" || a.wrong))
+    .forEach((a) => {
+      const key = `${a.uid}-${a.nodeId}-${a.problemId}`;
+      wrongByChild.set(key, (wrongByChild.get(key) || 0) + 1);
+    });
+  const topWrong = Array.from(wrongByChild.entries())
+    .map(([key, count]) => {
+      const [uid, nodeId, problemId] = key.split("-").reduce((acc, part, i) => {
+        if (i === 0) acc.push(part);
+        else if (i === 1) acc.push(part);
+        else acc[2] = (acc[2] || "") + (i > 2 ? `-${part}` : part);
+        return acc;
+      }, []);
+      return { uid, nodeId, problemId, count };
+    })
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5);
+
+  if (!childAttempts.length && !topWrong.length) {
+    return <p className="child-empty">자녀의 학습 기록이 아직 없습니다.</p>;
+  }
+
+  return (
+    <div className="child-activity-log">
+      {topWrong.length > 0 && (
+        <>
+          <p className="activity-subtitle">자주 틀리는 문제</p>
+          <div className="wrong-list">
+            {topWrong.map((item) => (
+              <div className="wrong-row" key={`${item.uid}-${item.nodeId}-${item.problemId}`}>
+                <strong>{childName.get(item.uid) || "자녀"}</strong>
+                <span>{item.nodeId}</span>
+                <b>{item.count}회</b>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+      {childAttempts.length > 0 && (
+        <>
+          <p className="activity-subtitle">최근 활동</p>
+          {childAttempts.map((a) => (
+            <div className="activity-row" key={a.id}>
+              <strong>{childName.get(a.uid) || "자녀"}</strong>
+              <span>{a.nodeId} · {a.problemId}</span>
+              <small className={a.completed ? "positive" : ""}>{a.completed ? "해결 완료" : "풀이 저장"}</small>
+            </div>
+          ))}
+        </>
       )}
     </div>
   );
@@ -1021,6 +1278,66 @@ function getFrequentWrongProblems(attempts) {
     .slice(0, 8);
 }
 
+function Confetti({ active }) {
+  const canvasRef = useRef(null);
+
+  useEffect(() => {
+    if (!active) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    const ctx = canvas.getContext("2d");
+    const colors = ["#ff6b6b", "#ffd93d", "#6bcb77", "#4d96ff", "#ff922b", "#cc5de8", "#f783ac", "#20c997"];
+    const cx = canvas.width / 2;
+    const particles = Array.from({ length: 160 }, () => {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 6 + Math.random() * 14;
+      return {
+        x: cx + (Math.random() - 0.5) * canvas.width * 0.5,
+        y: canvas.height + 10,
+        w: 7 + Math.random() * 7,
+        h: 3 + Math.random() * 5,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        rotation: Math.random() * Math.PI * 2,
+        vx: Math.cos(angle) * speed * 0.6,
+        vy: -(8 + Math.random() * 12),
+        vr: (Math.random() - 0.5) * 0.22,
+        gravity: 0.28,
+      };
+    });
+    let raf;
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      let alive = false;
+      for (const p of particles) {
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vy += p.gravity;
+        p.rotation += p.vr;
+        if (p.y < canvas.height + 30 && p.y > -30) alive = true;
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rotation);
+        ctx.fillStyle = p.color;
+        ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+        ctx.restore();
+      }
+      if (alive) raf = requestAnimationFrame(draw);
+    }
+    raf = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(raf);
+  }, [active]);
+
+  if (!active) return null;
+  return (
+    <canvas
+      ref={canvasRef}
+      style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: 9999, width: "100%", height: "100%" }}
+    />
+  );
+}
+
 const NotebookPanel = forwardRef(function NotebookPanel(
   {
     tool,
@@ -1030,9 +1347,20 @@ const NotebookPanel = forwardRef(function NotebookPanel(
     selectedProblem,
     selectedProblemId,
     setSelectedProblemId,
+    answerCheck,
+    saving,
+    solvedCount,
+    hintCount,
+    onAnswerCheck,
+    onSave,
   },
   ref,
 ) {
+  const [answerInput, setAnswerInput] = useState("");
+  const [showConfetti, setShowConfetti] = useState(false);
+  const [shaking, setShaking] = useState(false);
+  const [showGrid, setShowGrid] = useState(false);
+  const showGridRef = useRef(false);
   const canvasRef = useRef(null);
   const cursorRef = useRef(null);
   const ctxRef = useRef(null);
@@ -1047,6 +1375,11 @@ const NotebookPanel = forwardRef(function NotebookPanel(
     toolRef.current = tool;
     hideCursor();
   }, [tool]);
+
+  useEffect(() => {
+    showGridRef.current = showGrid;
+    redraw();
+  }, [showGrid]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -1094,7 +1427,10 @@ const NotebookPanel = forwardRef(function NotebookPanel(
 
   useEffect(() => {
     clearCanvas();
+    setAnswerInput("");
+    setShowConfetti(false);
   }, [selectedProblemId]);
+
 
   function getPoint(event) {
     const canvas = canvasRef.current;
@@ -1142,6 +1478,20 @@ const NotebookPanel = forwardRef(function NotebookPanel(
     ctx.stroke();
   }
 
+  function drawGrid(ctx, canvas) {
+    const step = Math.round(24 * (window.devicePixelRatio || 1));
+    ctx.save();
+    ctx.strokeStyle = "#e2e8f0";
+    ctx.lineWidth = 1;
+    for (let x = step; x < canvas.width; x += step) {
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
+    }
+    for (let y = step; y < canvas.height; y += step) {
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   function redraw() {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -1149,6 +1499,7 @@ const NotebookPanel = forwardRef(function NotebookPanel(
     ctxRef.current = ctx;
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+    if (showGridRef.current) drawGrid(ctx, canvas);
     strokesRef.current.forEach(drawStroke);
   }
 
@@ -1223,10 +1574,16 @@ const NotebookPanel = forwardRef(function NotebookPanel(
   useImperativeHandle(ref, () => ({
     exportStrokes: () => strokesRef.current,
     getStrokeSummary: () => `${strokesRef.current.length}개 획으로 풀이 작성`,
+    exportCanvasImage: () => {
+      const canvas = canvasRef.current;
+      if (!canvas || strokesRef.current.length === 0) return null;
+      return canvas.toDataURL("image/jpeg", 0.85);
+    },
   }));
 
   return (
     <section className="notebook-panel">
+      <Confetti active={showConfetti} />
       <div className="problem-header">
         <div>
           <span>{skill.stage} · {skill.unit}</span>
@@ -1241,8 +1598,29 @@ const NotebookPanel = forwardRef(function NotebookPanel(
         </select>
       </div>
 
+      {/* Skill progress bar */}
+      <div className="skill-progress-bar">
+        <div className="skill-progress-meta">
+          <span><BookOpen size={12} /> 스킬 진행도</span>
+          <strong>{Math.min(50, solvedCount)} / 50 문제</strong>
+        </div>
+        <div className="skill-progress-track">
+          <div className="skill-progress-fill" style={{ width: `${Math.min(100, solvedCount / 50 * 100)}%` }} />
+        </div>
+      </div>
+
       <article className="problem-card">
-        <span>난이도 {selectedProblem?.difficulty || 1}</span>
+        <div className="problem-card-meta">
+          <span>{"★".repeat(selectedProblem?.difficulty || 1)}{"☆".repeat(Math.max(0, 5 - (selectedProblem?.difficulty || 1)))}</span>
+          {(() => {
+            const baseXp = 30 + (selectedProblem?.difficulty || 1) * 10;
+            const mult = Math.max(0.3, 1 - (hintCount || 0) * 0.05);
+            const earnXp = Math.round(baseXp * mult);
+            return hintCount > 0
+              ? <span className="problem-xp penalty">+{earnXp} XP <s style={{opacity:0.5, fontSize:"0.75em"}}>{baseXp}</s> <small style={{color:"#f59e0b"}}>(-{Math.round((1-mult)*100)}%)</small></span>
+              : <span className="problem-xp">+{baseXp} XP</span>;
+          })()}
+        </div>
         <p>{selectedProblem?.prompt}</p>
         <ProblemAssets assets={selectedProblem?.assets || []} />
       </article>
@@ -1260,6 +1638,18 @@ const NotebookPanel = forwardRef(function NotebookPanel(
           <RefreshCw size={17} />
           새 노트
         </button>
+        <button
+          className={`grid-toggle ${showGrid ? "active" : ""}`}
+          onClick={() => setShowGrid((prev) => !prev)}
+          title="눈금 표시"
+          style={{ marginLeft: "auto" }}
+        >
+          <svg width="17" height="17" viewBox="0 0 17 17" fill="none" stroke="currentColor" strokeWidth="1.5">
+            <rect x="1" y="1" width="6" height="6" rx="0.5"/><rect x="10" y="1" width="6" height="6" rx="0.5"/>
+            <rect x="1" y="10" width="6" height="6" rx="0.5"/><rect x="10" y="10" width="6" height="6" rx="0.5"/>
+          </svg>
+          눈금
+        </button>
       </div>
 
       <div className="canvas-wrap">
@@ -1267,6 +1657,69 @@ const NotebookPanel = forwardRef(function NotebookPanel(
         <canvas
           ref={canvasRef}
         />
+      </div>
+
+      <div className={`answer-section ${answerCheck?.status || ""} ${shaking ? "shaking" : ""}`}>
+        {selectedProblem?.choices?.length > 0 ? (
+          <div className="mc-choices">
+            {selectedProblem.choices.map((choice, idx) => {
+              const isSelected = answerInput === choice;
+              const isCorrect = answerCheck?.status === "correct" && isSelected;
+              const isWrong = answerCheck?.status === "wrong" && isSelected;
+              return (
+                <button
+                  key={idx}
+                  className={`mc-choice ${isSelected ? "selected" : ""} ${isCorrect ? "correct" : ""} ${isWrong ? "wrong" : ""}`}
+                  onClick={async () => {
+                    if (answerCheck?.status === "correct") return;
+                    setAnswerInput(choice);
+                    const correct = await onAnswerCheck(choice);
+                    if (correct) { setShowConfetti(true); setTimeout(() => setShowConfetti(false), 3200); setTimeout(() => onSave(true), 1500); }
+                    else { setShaking(true); setTimeout(() => setShaking(false), 500); }
+                  }}
+                  disabled={saving}
+                >
+                  <span className="mc-num">{"①②③④⑤"[idx]}</span>
+                  {choice}
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="answer-input-row">
+            <input
+              value={answerInput}
+              onChange={(event) => setAnswerInput(event.target.value)}
+              placeholder="정답 입력"
+              onKeyDown={async (event) => {
+                if (event.key === "Enter" && answerInput.trim()) {
+                  const correct = await onAnswerCheck(answerInput);
+                  if (correct) { setShowConfetti(true); setTimeout(() => setShowConfetti(false), 3200); setTimeout(() => onSave(true), 1500); }
+                  else { setShaking(true); setTimeout(() => setShaking(false), 500); }
+                }
+              }}
+            />
+            <button className="answer-confirm-btn" onClick={async () => {
+              const correct = await onAnswerCheck(answerInput);
+              if (correct) { setShowConfetti(true); setTimeout(() => setShowConfetti(false), 3200); setTimeout(() => onSave(true), 1500); }
+              else { setShaking(true); setTimeout(() => setShaking(false), 500); }
+            }} disabled={saving || !answerInput.trim()}>
+              확인
+            </button>
+          </div>
+        )}
+        {answerCheck?.status === "correct" && <small className="answer-msg correct">✓ 정답입니다!</small>}
+        {answerCheck?.status === "wrong" && <small className="answer-msg wrong">✗ 오답입니다. 풀이 점검을 활용하세요.</small>}
+        <div className="save-row">
+          <button onClick={() => onSave(false)} disabled={saving}>
+            <Save size={17} />
+            풀이 저장
+          </button>
+          <button className="primary" onClick={() => onSave(true)} disabled={saving || answerCheck?.status !== "correct"}>
+            <CheckCircle2 size={17} />
+            해결 완료
+          </button>
+        </div>
       </div>
     </section>
   );
@@ -1288,31 +1741,26 @@ function ProblemAssets({ assets }) {
   );
 }
 
-function GuidePanel({ problem, guide, guideLoading, reviewCount, answerCheck, isAdmin, saving, onGuide, onAnswerCheck, onSave }) {
-  const [answerInput, setAnswerInput] = useState("");
+function GuidePanel({ problem, guide, guideLoading, reviewCount, answerCheck, isAdmin, onGuide }) {
   const canReview = answerCheck?.status === "wrong";
-  const canComplete = answerCheck?.status === "correct";
-
-  useEffect(() => {
-    setAnswerInput("");
-  }, [problem?.id]);
 
   return (
     <aside className="guide-panel">
       <div className="section-title">
         <Wand2 size={18} />
-        <h2>AI 가이드</h2>
+        <h2>풀이 도우미</h2>
       </div>
 
       <div className="guide-actions">
         {guideActions.map((action) => {
           const Icon = action.icon;
-          const disabled = guideLoading || (action.key === "check" && !canReview);
+          const isCheck = action.key === "check";
+          const disabled = guideLoading || (isCheck ? !canReview : false);
           return (
             <button key={action.key} onClick={() => onGuide(action)} disabled={disabled}>
               <Icon size={17} />
               {action.label}
-              {action.key === "check" && <small>{Math.max(0, 3 - reviewCount)}/3</small>}
+              {isCheck && <small>{Math.max(0, 3 - reviewCount)}/3</small>}
             </button>
           );
         })}
@@ -1330,36 +1778,6 @@ function GuidePanel({ problem, guide, guideLoading, reviewCount, answerCheck, is
           <small>admin 권한에서만 표시됩니다.</small>
         </div>
       )}
-
-      <div className={`answer-check ${answerCheck?.status || ""}`}>
-        <label>
-          <span>정답 입력</span>
-          <input
-            value={answerInput}
-            onChange={(event) => setAnswerInput(event.target.value)}
-            placeholder="계산한 답"
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && answerInput.trim()) onAnswerCheck(answerInput);
-            }}
-          />
-        </label>
-        <button onClick={() => onAnswerCheck(answerInput)} disabled={saving || !answerInput.trim()}>
-          정답 확인
-        </button>
-        {answerCheck?.status === "correct" && <small>정답입니다. 해결 완료를 누르세요.</small>}
-        {answerCheck?.status === "wrong" && <small>오답입니다. 내 풀이 점검을 사용할 수 있습니다.</small>}
-      </div>
-
-      <div className="save-row">
-        <button onClick={() => onSave(false)} disabled={saving}>
-          <Save size={17} />
-          풀이 저장
-        </button>
-        <button className="primary" onClick={() => onSave(true)} disabled={saving || !canComplete}>
-          <Brush size={17} />
-          해결 완료
-        </button>
-      </div>
 
       <div className="tablet-note">
         <MousePointer2 size={16} />

@@ -104,6 +104,24 @@ export async function loadLeaderboard() {
   return snap.docs.map((item) => item.data());
 }
 
+export async function loadUserProfile(uid) {
+  const snap = await getDoc(doc(db, "users", uid));
+  return snap.exists() ? snap.data() : null;
+}
+
+export async function loadProgressForUser(uid) {
+  const q = query(collection(db, "progress"), where("uid", "==", uid));
+  const snap = await getDocs(q);
+  const result = {};
+  for (const d of snap.docs) {
+    const data = d.data();
+    if (data.nodeId && data.solvedProblemIds?.length) {
+      result[data.nodeId] = data.solvedProblemIds;
+    }
+  }
+  return result;
+}
+
 export async function loadUsers() {
   const snap = await getDocs(collection(db, "users"));
   return snap.docs
@@ -111,7 +129,16 @@ export async function loadUsers() {
     .sort((a, b) => String(a.displayName || a.email || "").localeCompare(String(b.displayName || b.email || "")));
 }
 
-export async function updateUserRole({ uid, role, parentOf = [], displayName, grade, xp, solvedCount, onboardingComplete }) {
+export async function clearUserProgress(uid) {
+  const q = query(collection(db, "progress"), where("uid", "==", uid));
+  const snap = await getDocs(q);
+  await Promise.all(snap.docs.map((d) => setDoc(d.ref, { uid, nodeId: d.data().nodeId, solvedProblemIds: [], completedCount: 0, updatedAt: serverTimestamp() }, { merge: false })));
+}
+
+export async function updateUserRole({ uid, role, parentOf = [], displayName, grade, xp, solvedCount, onboardingComplete, resetProgress }) {
+  if (resetProgress) {
+    await clearUserProgress(uid);
+  }
   await updateDoc(doc(db, "users", uid), {
     role,
     parentOf,
@@ -157,11 +184,12 @@ export async function loadAttemptsForUsers(userIds) {
   return results.sort((a, b) => Number(b.completedAt?.seconds || b.createdAt?.seconds || 0) - Number(a.completedAt?.seconds || a.createdAt?.seconds || 0));
 }
 
-export async function saveAttempt({ user, problem, strokes, guide, isCorrect, status }) {
+export async function saveAttempt({ user, problem, strokes, guide, isCorrect, status, alreadySolved, xpMultiplier = 1 }) {
   const attemptRef = doc(collection(db, "attempts"));
   const completed = status === "completed";
   const wrong = status === "wrong";
-  const xpGain = completed ? 30 + problem.difficulty * 10 : 0;
+  const baseXp = completed && !alreadySolved ? 30 + problem.difficulty * 10 : 0;
+  const xpGain = Math.round(baseXp * Math.min(1, Math.max(0.3, xpMultiplier)));
   await setDoc(attemptRef, {
     uid: user.uid,
     problemId: problem.id,
@@ -181,7 +209,7 @@ export async function saveAttempt({ user, problem, strokes, guide, isCorrect, st
   const userRef = doc(db, "users", user.uid);
   await updateDoc(userRef, {
     xp: increment(xpGain),
-    solvedCount: increment(completed ? 1 : 0),
+    solvedCount: increment(completed && !alreadySolved ? 1 : 0),
     lastActivityAt: serverTimestamp(),
     ...(completed ? { lastSolvedAt: serverTimestamp() } : {}),
   });
