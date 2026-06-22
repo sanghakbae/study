@@ -1,6 +1,6 @@
 export async function onRequestPost(context) {
   try {
-    const apiKey = context.env.OPENAI_API_KEY;
+    const apiKey = cleanEnv(context.env.OPENAI_API_KEY);
     if (!apiKey) {
       return json({ error: "OPENAI_API_KEY is not configured." }, 500);
     }
@@ -23,9 +23,8 @@ export async function onRequestPost(context) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: context.env.OPENAI_MODEL || "gpt-5.5",
+        model: cleanEnv(context.env.OPENAI_MODEL) || "gpt-5.5",
         input: prompt,
-        temperature: 0.3,
       }),
     });
 
@@ -44,6 +43,12 @@ export async function onRequestPost(context) {
   } catch (error) {
     return json({ error: error.message }, 500);
   }
+}
+
+function cleanEnv(value) {
+  return String(value || "")
+    .trim()
+    .replace(/^['"]|['"]$/g, "");
 }
 
 function json(body, status = 200) {

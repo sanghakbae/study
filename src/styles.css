@@ -16,12 +16,13 @@ body,
 #root {
   width: 100%;
   min-width: 320px;
-  min-height: 100%;
+  height: 100%;
   margin: 0;
+  overflow: hidden;
 }
 
 body {
-  overflow-x: hidden;
+  overflow: hidden;
   overscroll-behavior: none;
 }
 
