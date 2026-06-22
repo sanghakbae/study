@@ -332,22 +332,13 @@ function LoginScreen({ onLogin }) {
 }
 
 function SkillTree({ skills, selectedSkillId, completedSkills, unlockedSkills, onSelect }) {
-  const nodeWidth = 168;
-  const nodeHeight = 76;
-  const gapX = 160;
-  const gapY = 92;
-  const padX = 42;
-  const padY = 32;
-  const maxLevel = Math.max(...skills.map((skill) => skill.level ?? 0), 0);
-  const maxLane = Math.max(...skills.map((skill) => skill.lane ?? 0), 0);
-  const mapWidth = padX * 2 + (maxLevel + 1) * nodeWidth + maxLevel * gapX;
-  const mapHeight = padY * 2 + (maxLane + 1) * nodeHeight + maxLane * gapY;
-  const positionedSkills = skills.map((skill) => ({
-    ...skill,
-    x: padX + (skill.level ?? 0) * (nodeWidth + gapX),
-    y: padY + (skill.lane ?? 0) * (nodeHeight + gapY),
+  const stageOrder = ["중1", "중2", "중3", "고1", "고2", "고3"];
+  const groupedSkills = stageOrder.map((stage) => ({
+    stage,
+    skills: skills
+      .filter((skill) => skill.stage === stage)
+      .sort((a, b) => (a.lane ?? 0) - (b.lane ?? 0) || (a.level ?? 0) - (b.level ?? 0)),
   }));
-  const byId = new Map(positionedSkills.map((skill) => [skill.id, skill]));
 
   return (
     <section className="skill-panel">
@@ -355,44 +346,36 @@ function SkillTree({ skills, selectedSkillId, completedSkills, unlockedSkills, o
         <Award size={18} />
         <h2>스킬 트리</h2>
       </div>
-      <div className="skill-map-scroll">
-        <div className="skill-map" style={{ width: mapWidth, height: mapHeight }}>
-          <svg className="skill-lines" width={mapWidth} height={mapHeight}>
-            {positionedSkills.flatMap((skill) =>
-              skill.prereq.map((parentId) => {
-                const parent = byId.get(parentId);
-                if (!parent) return null;
+      <div className="skill-board">
+        {groupedSkills.map((group) => (
+          <div className="skill-stage" key={group.stage}>
+            <div className="skill-stage-header">{group.stage}</div>
+            <div className="skill-stage-list">
+              {group.skills.map((skill) => {
+                const completed = completedSkills.includes(skill.id);
+                const unlocked = unlockedSkills.has(skill.id);
+                const selected = selectedSkillId === skill.id;
+                const pending = unlocked && !completed;
                 return (
-                  <path
-                    key={`${parentId}-${skill.id}`}
-                    d={`M ${parent.x + nodeWidth} ${parent.y + nodeHeight / 2} C ${parent.x + nodeWidth + gapX / 2} ${parent.y + nodeHeight / 2}, ${skill.x - gapX / 2} ${skill.y + nodeHeight / 2}, ${skill.x} ${skill.y + nodeHeight / 2}`}
-                  />
+                  <button
+                    className={`skill-node ${selected ? "selected" : ""} ${completed ? "completed" : ""} ${pending ? "pending" : ""} ${!unlocked ? "locked" : ""}`}
+                    key={skill.id}
+                    disabled={!unlocked}
+                    onClick={() => onSelect(skill.id)}
+                    title={skill.title}
+                  >
+                    <span className="skill-state">
+                      {unlocked ? completed ? <CheckCircle2 size={15} /> : <Sparkles size={15} /> : <Lock size={15} />}
+                    </span>
+                    <span className="skill-unit">{skill.unit}</span>
+                    <strong>{skill.title}</strong>
+                    {selected && <em>진행 중</em>}
+                  </button>
                 );
-              }),
-            )}
-          </svg>
-          {positionedSkills.map((skill) => {
-            const completed = completedSkills.includes(skill.id);
-            const unlocked = unlockedSkills.has(skill.id);
-            const selected = selectedSkillId === skill.id;
-            const pending = unlocked && !completed;
-            return (
-              <button
-                className={`skill-node ${selected ? "selected" : ""} ${completed ? "completed" : ""} ${pending ? "pending" : ""} ${!unlocked ? "locked" : ""}`}
-                key={skill.id}
-                disabled={!unlocked}
-                style={{ left: skill.x, top: skill.y, width: nodeWidth, height: nodeHeight }}
-                onClick={() => onSelect(skill.id)}
-                title={skill.title}
-              >
-                {unlocked ? completed ? <CheckCircle2 size={16} /> : <Sparkles size={16} /> : <Lock size={16} />}
-                <span>{skill.stage}</span>
-                <strong>{skill.title}</strong>
-                {selected && <em>진행 중</em>}
-              </button>
-            );
-          })}
-        </div>
+              })}
+            </div>
+          </div>
+        ))}
       </div>
     </section>
   );

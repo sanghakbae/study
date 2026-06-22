@@ -253,7 +253,7 @@ button:disabled {
 
 .dashboard-strip {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-columns: minmax(0, 1fr) 280px;
   gap: 14px;
   margin-top: 14px;
 }
@@ -285,88 +285,135 @@ button:disabled {
   font-size: 1rem;
 }
 
-.skill-map-scroll {
+.skill-board {
   width: 100%;
-  overflow-x: auto;
-  overflow-y: hidden;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(154px, 1fr));
+  gap: 14px;
+  align-items: stretch;
+  padding: 14px;
   border-radius: 8px;
   background:
-    linear-gradient(90deg, rgba(20, 184, 166, 0.12), rgba(245, 158, 11, 0.12)),
+    linear-gradient(90deg, rgba(20, 184, 166, 0.14), rgba(245, 158, 11, 0.14)),
+    repeating-linear-gradient(0deg, rgba(15, 23, 42, 0.04) 0 1px, transparent 1px 38px),
     #f8fafc;
 }
 
-.skill-map {
+.skill-stage {
   position: relative;
-  min-width: 100%;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 10px;
 }
 
-.skill-lines {
+.skill-stage:not(:last-child)::after {
+  content: "";
   position: absolute;
-  inset: 0;
-  overflow: visible;
+  top: 44px;
+  right: -14px;
+  bottom: 24px;
+  width: 14px;
+  background: linear-gradient(90deg, rgba(15, 23, 42, 0.2), rgba(15, 23, 42, 0));
+  clip-path: polygon(0 47%, 72% 47%, 72% 38%, 100% 50%, 72% 62%, 72% 53%, 0 53%);
+  opacity: 0.75;
 }
 
-.skill-lines path {
-  fill: none;
-  stroke: rgba(17, 24, 39, 0.22);
-  stroke-width: 4;
-  stroke-linecap: round;
+.skill-stage-header {
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: #111827;
+  color: #fff;
+  font-weight: 950;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.18);
+}
+
+.skill-stage-list {
+  display: grid;
+  grid-auto-rows: minmax(68px, auto);
+  gap: 9px;
 }
 
 .skill-node {
-  position: absolute;
+  position: relative;
+  width: 100%;
+  min-height: 68px;
   display: grid;
-  grid-template-columns: 18px 1fr;
-  gap: 3px 7px;
+  grid-template-columns: 20px 1fr;
+  grid-template-rows: auto 1fr;
+  gap: 2px 7px;
   align-items: center;
   text-align: left;
   padding: 9px 10px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid #94a3b8;
   border-radius: 8px;
-  background: #fff;
+  background:
+    linear-gradient(180deg, #ffffff, #f1f5f9);
   color: #111827;
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.09);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.82),
+    0 8px 18px rgba(15, 23, 42, 0.1);
 }
 
 .skill-node.locked {
-  background: rgba(255, 255, 255, 0.58);
+  background: rgba(255, 255, 255, 0.42);
   color: #94a3b8;
-  filter: grayscale(1);
+  filter: grayscale(0.9);
   box-shadow: none;
 }
 
 .skill-node.pending {
-  background: #f8fafc;
+  border-color: #38bdf8;
+  background:
+    linear-gradient(180deg, #ffffff, #e0f2fe);
 }
 
-.skill-node span {
+.skill-state {
+  grid-row: 1 / span 2;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+}
+
+.skill-unit {
   color: #64748b;
-  font-size: 0.76rem;
+  font-size: 0.68rem;
   font-weight: 800;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .skill-node strong {
-  grid-column: 1 / -1;
-  font-size: 0.82rem;
+  font-size: 0.83rem;
   line-height: 1.25;
+  min-width: 0;
 }
 
 .skill-node.completed {
   border-color: #10b981;
-  background: #ecfdf5;
+  background:
+    linear-gradient(180deg, #ecfdf5, #ccfbf1);
 }
 
 .skill-node.selected {
   border-color: #0f766e;
-  outline: 4px solid rgba(20, 184, 166, 0.28);
-  background: #ccfbf1;
-  box-shadow: 0 12px 28px rgba(15, 118, 110, 0.22);
+  outline: 4px solid rgba(20, 184, 166, 0.22);
+  background:
+    linear-gradient(180deg, #ccfbf1, #99f6e4);
+  box-shadow:
+    0 0 0 1px rgba(15, 118, 110, 0.45),
+    0 14px 32px rgba(15, 118, 110, 0.28);
+  transform: translateY(-1px);
 }
 
 .skill-node em {
   position: absolute;
   right: 8px;
-  top: -12px;
+  top: -10px;
   padding: 3px 7px;
   border-radius: 999px;
   background: #111827;
@@ -374,6 +421,13 @@ button:disabled {
   font-size: 0.68rem;
   font-style: normal;
   font-weight: 900;
+}
+
+@media (max-width: 900px) {
+  .skill-board {
+    grid-template-columns: repeat(6, 170px);
+    overflow-x: auto;
+  }
 }
 
 .leader-list {
