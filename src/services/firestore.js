@@ -124,6 +124,24 @@ export async function updateUserRole({ uid, role, parentOf = [], displayName, gr
   });
 }
 
+export async function completeOnboarding({ user, role, grade }) {
+  await setDoc(
+    doc(db, "users", user.uid),
+    {
+      uid: user.uid,
+      displayName: user.displayName || "수학 러너",
+      photoURL: user.photoURL || "",
+      email: user.email || "",
+      role,
+      grade: role === "student" ? grade : "",
+      parentOf: role === "parents" ? [] : [],
+      onboardingComplete: true,
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true },
+  );
+}
+
 export async function loadAttemptsForUsers(userIds) {
   if (!userIds.length) return [];
   const chunks = [];

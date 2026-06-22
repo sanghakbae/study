@@ -29,6 +29,7 @@ import {
 import { onAuthStateChanged, signInWithPopup, signOut } from "firebase/auth";
 import { auth, googleProvider } from "./firebase";
 import {
+  completeOnboarding,
   ensureUserProfile,
   loadAttemptsForUsers,
   loadLeaderboard,
@@ -208,13 +209,7 @@ export default function App() {
       parentOf: role === "parents" ? profile.parentOf || [] : [],
       onboardingComplete: true,
     };
-    await updateUserRole({
-      uid: user.uid,
-      role,
-      grade: nextProfile.grade,
-      parentOf: nextProfile.parentOf,
-      onboardingComplete: true,
-    });
+    await completeOnboarding({ user, role, grade });
     setProfile(nextProfile);
     await refreshCatalog();
     await refreshMembers(nextProfile);
@@ -585,11 +580,16 @@ function OnboardingPage({ user, profile, onComplete }) {
   const [role, setRole] = useState(profile.role === "parents" ? "parents" : "student");
   const [grade, setGrade] = useState(profile.grade || "중1");
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
 
   async function submit() {
     setSubmitting(true);
+    setError("");
     try {
       await onComplete({ role, grade });
+    } catch (submitError) {
+      console.error(submitError);
+      setError(`저장 실패: ${submitError.message}`);
     } finally {
       setSubmitting(false);
     }
@@ -626,6 +626,7 @@ function OnboardingPage({ user, profile, onComplete }) {
             <small>학년은 통계용입니다. 고1이어도 중1 문제부터 순서대로 풉니다.</small>
           </label>
         )}
+        {error && <div className="onboarding-error">{error}</div>}
         <button className="onboarding-submit" onClick={submit} disabled={submitting}>
           {submitting ? "저장 중..." : "시작하기"}
         </button>
