@@ -349,6 +349,17 @@ export default function App() {
         members={members}
         attempts={activityAttempts}
         leaders={leaderboard}
+        onRegisterChild={async (childUid) => {
+          const parentOf = Array.from(new Set([...(profile.parentOf || []), childUid].filter(Boolean)));
+          await updateUserRole({
+            uid: user.uid,
+            role: "parents",
+            parentOf,
+          });
+          const nextProfile = { ...profile, parentOf };
+          setProfile((current) => ({ ...current, parentOf }));
+          await refreshMembers(nextProfile);
+        }}
       />
     );
   }
@@ -440,12 +451,12 @@ function AdminPage({ user, profile, leaders, members, attempts, onRoleUpdate }) 
   );
 }
 
-function ParentPage({ user, profile, members, attempts, leaders }) {
+function ParentPage({ user, profile, members, attempts, leaders, onRegisterChild }) {
   return (
     <main className="app-shell parent-shell">
       <Topbar user={user} profile={profile} />
       <section className="parent-layout">
-        <ParentInsightPanel profile={profile} members={members} />
+        <ParentInsightPanel profile={profile} members={members} onRegisterChild={onRegisterChild} />
         <Leaderboard leaders={leaders} currentUid={user.uid} />
         <ActivityPanel members={members} attempts={attempts} />
       </section>
@@ -595,7 +606,7 @@ function SkillTree({ skills, selectedSkillId, completedSkills, solvedBySkill, un
   );
 }
 
-function Leaderboard({ leaders, currentUid, profile, members, attempts, onRoleUpdate }) {
+function Leaderboard({ leaders, currentUid }) {
   return (
     <section className="leader-panel">
       <div className="section-title">
@@ -614,15 +625,6 @@ function Leaderboard({ leaders, currentUid, profile, members, attempts, onRoleUp
           </li>
         )) : <li className="empty-row">아직 랭킹 데이터가 없습니다.</li>}
       </ol>
-      {profile?.role === "admin" && (
-        <MemberManager members={members} onRoleUpdate={onRoleUpdate} />
-      )}
-      {profile?.role === "parents" && (
-        <ParentInsightPanel profile={profile} members={members} />
-      )}
-      {["admin", "parents"].includes(profile?.role) && (
-        <ActivityPanel members={members} attempts={attempts} />
-      )}
     </section>
   );
 }
@@ -664,7 +666,7 @@ function MemberManager({ members, onRoleUpdate }) {
   return (
     <div className="member-manager">
       <h3>회원 관리</h3>
-      {members.slice(0, 12).map((member) => (
+      {members.length ? members.slice(0, 12).map((member) => (
         <div className="member-row" key={member.uid}>
           <div>
             <strong>{formatStudentName(member)}</strong>
@@ -713,17 +715,26 @@ function MemberManager({ members, onRoleUpdate }) {
             </select>
           )}
         </div>
-      ))}
+      )) : <p>아직 등록된 회원이 없습니다. admin 계정으로 로그인하면 목업 학생 5명이 자동 생성됩니다.</p>}
     </div>
   );
 }
 
-function ParentInsightPanel({ profile, members }) {
+function ParentInsightPanel({ profile, members, onRegisterChild }) {
+  const [childQuery, setChildQuery] = useState("");
   const students = members
     .filter((member) => member.role === "student")
     .sort((a, b) => (b.xp || 0) - (a.xp || 0));
   const childIds = new Set(profile?.parentOf || []);
   const children = students.filter((student) => childIds.has(student.uid));
+  const candidates = students
+    .filter((student) => !childIds.has(student.uid))
+    .filter((student) => {
+      const queryText = childQuery.trim().toLowerCase();
+      if (!queryText) return false;
+      return `${student.displayName || ""} ${student.email || ""} ${student.grade || ""}`.toLowerCase().includes(queryText);
+    })
+    .slice(0, 6);
   const avgXp = students.length ? Math.round(students.reduce((sum, student) => sum + (student.xp || 0), 0) / students.length) : 0;
   const avgSolved = students.length
     ? Math.round(students.reduce((sum, student) => sum + (student.solvedCount || 0), 0) / students.length)
@@ -732,6 +743,33 @@ function ParentInsightPanel({ profile, members }) {
   return (
     <div className="parent-insight">
       <h3>자녀 학습 비교</h3>
+      {onRegisterChild && (
+        <div className="child-register">
+          <label>
+            <span>가입한 자녀 조회</span>
+            <input
+              value={childQuery}
+              onChange={(event) => setChildQuery(event.target.value)}
+              placeholder="자녀 이름 또는 이메일"
+            />
+          </label>
+          <div className="child-candidates">
+            {candidates.map((student) => (
+              <button
+                key={student.uid}
+                onClick={() => {
+                  onRegisterChild(student.uid);
+                  setChildQuery("");
+                }}
+              >
+                <strong>{formatStudentName(student)}</strong>
+                <small>{student.email}</small>
+              </button>
+            ))}
+            {childQuery.trim() && !candidates.length && <p>가입된 학생 중 일치하는 자녀가 없습니다.</p>}
+          </div>
+        </div>
+      )}
       {children.length ? (
         children.map((child) => {
           const rankIndex = students.findIndex((student) => student.uid === child.uid);
@@ -757,7 +795,7 @@ function ParentInsightPanel({ profile, members }) {
           );
         })
       ) : (
-        <p>admin이 회원 관리에서 이 학부모의 자녀를 선택해야 합니다.</p>
+        <p>자녀를 선택하면 학습 통계와 다른 학생 대비 차이가 표시됩니다.</p>
       )}
     </div>
   );

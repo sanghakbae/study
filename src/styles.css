@@ -225,6 +225,13 @@ button:disabled {
   box-shadow: 0 16px 42px rgba(15, 23, 42, 0.08);
 }
 
+.admin-panel > .activity-panel,
+.admin-panel > .member-manager {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
 .warning-bar {
   width: 100%;
   margin-bottom: 10px;
@@ -631,6 +638,55 @@ button:disabled {
 .comparison-grid {
   display: grid;
   gap: 4px;
+}
+
+.child-register {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 8px;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.child-register label,
+.child-register span {
+  display: grid;
+  gap: 5px;
+}
+
+.child-register span {
+  color: #475569;
+  font-size: 0.76rem;
+  font-weight: 900;
+}
+
+.child-register input {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 0 9px;
+  font-weight: 800;
+}
+
+.child-candidates {
+  display: grid;
+  gap: 6px;
+}
+
+.child-candidates button {
+  display: grid;
+  gap: 2px;
+  text-align: left;
+  padding: 8px;
+  border-radius: 8px;
+  background: #e0f2fe;
+  color: #111827;
+}
+
+.child-candidates small {
+  color: #64748b;
 }
 
 .child-card .positive {

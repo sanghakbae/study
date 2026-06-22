@@ -102,9 +102,10 @@ export async function loadLeaderboard() {
 }
 
 export async function loadUsers() {
-  const q = query(collection(db, "users"), orderBy("createdAt", "desc"), limit(200));
-  const snap = await getDocs(q);
-  return snap.docs.map((item) => item.data());
+  const snap = await getDocs(collection(db, "users"));
+  return snap.docs
+    .map((item) => item.data())
+    .sort((a, b) => String(a.displayName || a.email || "").localeCompare(String(b.displayName || b.email || "")));
 }
 
 export async function updateUserRole({ uid, role, parentOf = [], displayName, grade, xp, solvedCount }) {
