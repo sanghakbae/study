@@ -134,7 +134,7 @@ button:disabled {
   margin: 0;
   width: 100%;
   font-size: clamp(2rem, 5vw, 3.35rem);
-  line-height: 0.95;
+  line-height: 1.08;
   letter-spacing: 0;
   white-space: nowrap;
   overflow: hidden;
