@@ -1,4 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   Award,
   BookOpen,
@@ -752,7 +754,7 @@ function GuidePanel({ problem, guide, guideLoading, saving, onGuide, onSave }) {
 
       <div className="guide-output">
         {guideLoading && <Loader2 className="spin" size={20} />}
-        <p>{guide}</p>
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{guide}</ReactMarkdown>
       </div>
 
       <div className="answer-box">
