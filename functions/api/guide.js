@@ -23,7 +23,7 @@ export async function onRequestPost(context) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: context.env.OPENAI_MODEL || "gpt-4.1-mini",
+        model: context.env.OPENAI_MODEL || "gpt-5.5",
         input: prompt,
         temperature: 0.3,
       }),

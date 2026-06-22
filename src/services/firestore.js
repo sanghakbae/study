@@ -38,15 +38,15 @@ export async function ensureUserProfile(user) {
 export async function seedCatalogIfNeeded() {
   const markerRef = doc(db, "system", "catalog");
   const marker = await getDoc(markerRef);
-  if (marker.exists()) return;
+  if (marker.exists() && marker.data()?.version >= 2) return;
 
   await Promise.all([
     ...curriculumNodes.map((node) => setDoc(doc(db, "skills", node.id), node)),
     ...sampleProblems.map((problem) => setDoc(doc(db, "problems", problem.id), problem)),
     setDoc(markerRef, {
       seededAt: serverTimestamp(),
-      version: 1,
-      note: "Initial middle/high school math catalog seed.",
+      version: 2,
+      note: "Expanded middle/high school math catalog seed.",
     }),
   ]);
 }

@@ -50,7 +50,7 @@ cp .dev.vars.example .dev.vars
 
 ```text
 OPENAI_API_KEY=sk-proj_...
-OPENAI_MODEL=gpt-4.1-mini
+OPENAI_MODEL=gpt-5.5
 ```
 
 실행:

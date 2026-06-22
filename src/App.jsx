@@ -108,19 +108,19 @@ export default function App() {
     if (!user) return;
     loadProblemsBySkill(selectedSkillId)
       .then((items) => {
-        const nextProblems = items.length ? items : sampleProblems.filter((item) => item.nodeId === selectedSkillId);
+        const nextProblems = items.length ? items : getFallbackProblems(selectedSkill);
         setProblems(nextProblems);
         setSelectedProblemId(nextProblems[0]?.id || "");
         setGuide("새 문제를 열었습니다. 풀이를 쓰고 필요한 순간에 가이드를 요청하세요.");
       })
       .catch((error) => {
         console.error(error);
-        const nextProblems = sampleProblems.filter((item) => item.nodeId === selectedSkillId);
+        const nextProblems = getFallbackProblems(selectedSkill);
         setProblems(nextProblems);
         setSelectedProblemId(nextProblems[0]?.id || "");
         setDataWarning(`문제 DB를 읽지 못해 내장 샘플로 표시 중: ${error.message}`);
       });
-  }, [selectedSkillId, user]);
+  }, [selectedSkillId, selectedSkill, user]);
 
   async function refreshCatalog() {
     const [loadedSkills, loadedLeaders] = await Promise.all([loadSkills(), loadLeaderboard()]);
@@ -291,6 +291,26 @@ export default function App() {
   );
 }
 
+function getFallbackProblems(skill) {
+  const seeded = sampleProblems.filter((item) => item.nodeId === skill?.id);
+  if (seeded.length) return seeded;
+
+  return [
+    {
+      id: `fallback-${skill?.id || "problem"}`,
+      nodeId: skill?.id || "unknown",
+      gradeBand: skill?.stage?.startsWith("중") ? "middle" : "high",
+      source: "generated-placeholder",
+      sourceName: "단원 대표 연습 문제",
+      difficulty: skill?.stage?.startsWith("중") ? 2 : 3,
+      title: `${skill?.title || "수학"} 대표 문제`,
+      prompt: `${skill?.title || "이 단원"}의 핵심 개념을 이용해 풀이 과정을 노트에 정리해 보세요. 실제 교과서/문제은행 문항은 Firestore problems 컬렉션에 추가하면 이 자리에 표시됩니다.`,
+      answer: "관리자 등록 필요",
+      concept: `${skill?.unit || "수학"} 영역의 정의, 조건, 구해야 하는 값을 먼저 분리하세요.`,
+    },
+  ];
+}
+
 function LoginScreen({ onLogin }) {
   return (
     <main className="login-screen">
@@ -312,48 +332,67 @@ function LoginScreen({ onLogin }) {
 }
 
 function SkillTree({ skills, selectedSkillId, completedSkills, unlockedSkills, onSelect }) {
+  const nodeWidth = 168;
+  const nodeHeight = 76;
+  const gapX = 160;
+  const gapY = 92;
+  const padX = 42;
+  const padY = 32;
+  const maxLevel = Math.max(...skills.map((skill) => skill.level ?? 0), 0);
+  const maxLane = Math.max(...skills.map((skill) => skill.lane ?? 0), 0);
+  const mapWidth = padX * 2 + (maxLevel + 1) * nodeWidth + maxLevel * gapX;
+  const mapHeight = padY * 2 + (maxLane + 1) * nodeHeight + maxLane * gapY;
+  const positionedSkills = skills.map((skill) => ({
+    ...skill,
+    x: padX + (skill.level ?? 0) * (nodeWidth + gapX),
+    y: padY + (skill.lane ?? 0) * (nodeHeight + gapY),
+  }));
+  const byId = new Map(positionedSkills.map((skill) => [skill.id, skill]));
+
   return (
     <section className="skill-panel">
       <div className="section-title">
         <Award size={18} />
         <h2>스킬 트리</h2>
       </div>
-      <div className="skill-map">
-        <svg className="skill-lines" viewBox="0 0 100 54" preserveAspectRatio="none">
-          {skills.flatMap((skill) =>
-            skill.prereq.map((parentId) => {
-              const parent = skills.find((item) => item.id === parentId);
-              if (!parent) return null;
-              return (
-                <line
-                  key={`${parentId}-${skill.id}`}
-                  x1={parent.position.x + 3}
-                  y1={parent.position.y + 3}
-                  x2={skill.position.x + 3}
-                  y2={skill.position.y + 3}
-                />
-              );
-            }),
-          )}
-        </svg>
-        {skills.map((skill) => {
-          const completed = completedSkills.includes(skill.id);
-          const unlocked = unlockedSkills.has(skill.id);
-          return (
-            <button
-              className={`skill-node ${selectedSkillId === skill.id ? "selected" : ""} ${completed ? "completed" : ""}`}
-              key={skill.id}
-              disabled={!unlocked}
-              style={{ left: `${skill.position.x}%`, top: `${skill.position.y}%` }}
-              onClick={() => onSelect(skill.id)}
-              title={skill.title}
-            >
-              {unlocked ? completed ? <CheckCircle2 size={16} /> : <Sparkles size={16} /> : <Lock size={16} />}
-              <span>{skill.stage}</span>
-              <strong>{skill.title}</strong>
-            </button>
-          );
-        })}
+      <div className="skill-map-scroll">
+        <div className="skill-map" style={{ width: mapWidth, height: mapHeight }}>
+          <svg className="skill-lines" width={mapWidth} height={mapHeight}>
+            {positionedSkills.flatMap((skill) =>
+              skill.prereq.map((parentId) => {
+                const parent = byId.get(parentId);
+                if (!parent) return null;
+                return (
+                  <path
+                    key={`${parentId}-${skill.id}`}
+                    d={`M ${parent.x + nodeWidth} ${parent.y + nodeHeight / 2} C ${parent.x + nodeWidth + gapX / 2} ${parent.y + nodeHeight / 2}, ${skill.x - gapX / 2} ${skill.y + nodeHeight / 2}, ${skill.x} ${skill.y + nodeHeight / 2}`}
+                  />
+                );
+              }),
+            )}
+          </svg>
+          {positionedSkills.map((skill) => {
+            const completed = completedSkills.includes(skill.id);
+            const unlocked = unlockedSkills.has(skill.id);
+            const selected = selectedSkillId === skill.id;
+            const pending = unlocked && !completed;
+            return (
+              <button
+                className={`skill-node ${selected ? "selected" : ""} ${completed ? "completed" : ""} ${pending ? "pending" : ""} ${!unlocked ? "locked" : ""}`}
+                key={skill.id}
+                disabled={!unlocked}
+                style={{ left: skill.x, top: skill.y, width: nodeWidth, height: nodeHeight }}
+                onClick={() => onSelect(skill.id)}
+                title={skill.title}
+              >
+                {unlocked ? completed ? <CheckCircle2 size={16} /> : <Sparkles size={16} /> : <Lock size={16} />}
+                <span>{skill.stage}</span>
+                <strong>{skill.title}</strong>
+                {selected && <em>진행 중</em>}
+              </button>
+            );
+          })}
+        </div>
       </div>
     </section>
   );
@@ -402,9 +441,17 @@ const NotebookPanel = forwardRef(function NotebookPanel(
   ref,
 ) {
   const canvasRef = useRef(null);
+  const cursorRef = useRef(null);
   const strokesRef = useRef([]);
   const drawingRef = useRef(false);
   const currentStrokeRef = useRef([]);
+  const lastPointRef = useRef(null);
+  const toolRef = useRef(tool);
+
+  useEffect(() => {
+    toolRef.current = tool;
+    hideCursor();
+  }, [tool]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -425,6 +472,28 @@ const NotebookPanel = forwardRef(function NotebookPanel(
   }, []);
 
   useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return undefined;
+
+    const options = { passive: false };
+    canvas.addEventListener("pointerdown", startDrawing, options);
+    canvas.addEventListener("pointermove", moveDrawing, options);
+    canvas.addEventListener("pointerup", endDrawing, options);
+    canvas.addEventListener("pointercancel", endDrawing, options);
+    canvas.addEventListener("pointerleave", hideCursor);
+    canvas.addEventListener("pointerenter", updateCursor);
+
+    return () => {
+      canvas.removeEventListener("pointerdown", startDrawing);
+      canvas.removeEventListener("pointermove", moveDrawing);
+      canvas.removeEventListener("pointerup", endDrawing);
+      canvas.removeEventListener("pointercancel", endDrawing);
+      canvas.removeEventListener("pointerleave", hideCursor);
+      canvas.removeEventListener("pointerenter", updateCursor);
+    };
+  }, []);
+
+  useEffect(() => {
     clearCanvas();
   }, [selectedProblemId]);
 
@@ -439,6 +508,14 @@ const NotebookPanel = forwardRef(function NotebookPanel(
     };
   }
 
+  function getCssPoint(event) {
+    const rect = canvasRef.current.getBoundingClientRect();
+    return {
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top,
+    };
+  }
+
   function drawStroke(stroke) {
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d");
@@ -446,7 +523,7 @@ const NotebookPanel = forwardRef(function NotebookPanel(
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     ctx.strokeStyle = stroke.tool === "eraser" ? "#ffffff" : "#111827";
-    ctx.lineWidth = stroke.tool === "eraser" ? 28 : 4;
+    ctx.lineWidth = stroke.tool === "eraser" ? 30 : 3.5;
     ctx.beginPath();
     ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
     stroke.points.slice(1).forEach((point) => ctx.lineTo(point.x, point.y));
@@ -455,6 +532,7 @@ const NotebookPanel = forwardRef(function NotebookPanel(
 
   function redraw() {
     const canvas = canvasRef.current;
+    if (!canvas) return;
     const ctx = canvas.getContext("2d");
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -464,26 +542,63 @@ const NotebookPanel = forwardRef(function NotebookPanel(
   function clearCanvas() {
     strokesRef.current = [];
     currentStrokeRef.current = [];
+    lastPointRef.current = null;
     redraw();
   }
 
   function startDrawing(event) {
+    event.preventDefault();
     drawingRef.current = true;
-    currentStrokeRef.current = [getPoint(event)];
+    const point = getPoint(event);
+    currentStrokeRef.current = [point];
+    lastPointRef.current = point;
     canvasRef.current.setPointerCapture(event.pointerId);
   }
 
   function moveDrawing(event) {
+    updateCursor(event);
     if (!drawingRef.current) return;
-    currentStrokeRef.current.push(getPoint(event));
-    drawStroke({ tool, points: currentStrokeRef.current.slice(-2) });
+    event.preventDefault();
+    const events = event.getCoalescedEvents?.() || [event];
+    for (const pointerEvent of events) {
+      const point = getPoint(pointerEvent);
+      const lastPoint = lastPointRef.current;
+      if (!lastPoint) {
+        lastPointRef.current = point;
+        continue;
+      }
+      currentStrokeRef.current.push(point);
+      drawStroke({ tool: toolRef.current, points: [lastPoint, point] });
+      lastPointRef.current = point;
+    }
   }
 
-  function endDrawing() {
+  function endDrawing(event) {
     if (!drawingRef.current) return;
+    event?.preventDefault?.();
     drawingRef.current = false;
-    strokesRef.current.push({ tool, points: currentStrokeRef.current });
+    strokesRef.current.push({ tool: toolRef.current, points: currentStrokeRef.current });
     currentStrokeRef.current = [];
+    lastPointRef.current = null;
+    if (event?.pointerId != null && canvasRef.current?.hasPointerCapture?.(event.pointerId)) {
+      canvasRef.current.releasePointerCapture(event.pointerId);
+    }
+  }
+
+  function updateCursor(event) {
+    const cursor = cursorRef.current;
+    if (!cursor) return;
+    if (toolRef.current !== "eraser") {
+      cursor.style.opacity = "0";
+      return;
+    }
+    const point = getCssPoint(event);
+    cursor.style.opacity = "1";
+    cursor.style.transform = `translate(${point.x}px, ${point.y}px) translate(-50%, -50%)`;
+  }
+
+  function hideCursor() {
+    if (cursorRef.current) cursorRef.current.style.opacity = "0";
   }
 
   useImperativeHandle(ref, () => ({
@@ -529,12 +644,9 @@ const NotebookPanel = forwardRef(function NotebookPanel(
       </div>
 
       <div className="canvas-wrap">
+        <div className="eraser-cursor" ref={cursorRef} />
         <canvas
           ref={canvasRef}
-          onPointerDown={startDrawing}
-          onPointerMove={moveDrawing}
-          onPointerUp={endDrawing}
-          onPointerCancel={endDrawing}
         />
       </div>
     </section>
