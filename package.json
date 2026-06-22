@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
+    "dev:pages": "npm run build && wrangler pages dev dist --compatibility-date=2026-06-22",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0",
     "deploy": "wrangler pages deploy dist --project-name study"

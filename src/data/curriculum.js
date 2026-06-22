@@ -109,6 +109,13 @@ export const sampleProblems = [
     prompt: "두 점 (1, 2), (5, 10)을 지나는 직선의 기울기를 구하시오.",
     answer: "2",
     concept: "기울기 = y의 증가량 / x의 증가량",
+    assets: [
+      {
+        type: "graph",
+        label: "좌표평면 참고 이미지",
+        url: "",
+      },
+    ],
   },
   {
     id: "p-m3-quadratic-01",

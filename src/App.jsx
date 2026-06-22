@@ -510,6 +510,7 @@ const NotebookPanel = forwardRef(function NotebookPanel(
       <article className="problem-card">
         <span>난이도 {selectedProblem?.difficulty || 1}</span>
         <p>{selectedProblem?.prompt}</p>
+        <ProblemAssets assets={selectedProblem?.assets || []} />
       </article>
 
       <div className="tool-row">
@@ -539,6 +540,22 @@ const NotebookPanel = forwardRef(function NotebookPanel(
     </section>
   );
 });
+
+function ProblemAssets({ assets }) {
+  const visibleAssets = assets.filter((asset) => asset.url);
+  if (!visibleAssets.length) return null;
+
+  return (
+    <div className="problem-assets">
+      {visibleAssets.map((asset) => (
+        <figure key={asset.url}>
+          <img src={asset.url} alt={asset.label || "문제 참고 자료"} />
+          {asset.label && <figcaption>{asset.label}</figcaption>}
+        </figure>
+      ))}
+    </div>
+  );
+}
 
 function GuidePanel({ problem, guide, guideLoading, saving, onGuide, onSave }) {
   return (

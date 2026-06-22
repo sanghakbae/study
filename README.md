@@ -15,6 +15,7 @@
   - 오른쪽: OpenAI 가이드 패널
 - 랭킹/XP 경쟁
 - Cloudflare Pages Function `/api/guide`에서 OpenAI API 호출
+- 문제 이미지/그래프는 Cloudflare R2(S3 호환)에 저장하고 Firestore 문제 문서의 `assets` 배열 URL로 참조
 
 ## 실행
 
@@ -38,6 +39,27 @@ npm run build
 ## OpenAI 키
 
 브라우저에 OpenAI 키를 노출하지 않습니다. Cloudflare Pages secret으로 넣습니다.
+
+로컬에서 Cloudflare Pages Function까지 테스트하려면:
+
+```bash
+cp .dev.vars.example .dev.vars
+```
+
+그 다음 `.dev.vars`에 키를 넣습니다.
+
+```text
+OPENAI_API_KEY=sk-proj_...
+OPENAI_MODEL=gpt-4.1-mini
+```
+
+실행:
+
+```bash
+npm run dev:pages
+```
+
+운영 배포용 secret:
 
 ```bash
 npx wrangler pages secret put OPENAI_API_KEY --project-name study
@@ -76,6 +98,29 @@ study.sanghak.kr
 - 공개 벤치마크: GSM8K, MATH, MathQA 등은 보충/챌린지 문제로만 사용 권장
 
 앱 안의 `src/services/problemSources.js`가 이 소스 레지스트리입니다.
+
+## 문제 이미지/그래프 저장
+
+문제 문서 예시:
+
+```json
+{
+  "id": "p-m2-functions-graph-01",
+  "nodeId": "m2-functions",
+  "title": "일차함수 그래프",
+  "prompt": "그래프를 보고 직선의 기울기를 구하시오.",
+  "answer": "2",
+  "assets": [
+    {
+      "type": "graph",
+      "label": "문제 그래프",
+      "url": "https://assets.study.sanghak.kr/problems/m2-functions/graph-01.png"
+    }
+  ]
+}
+```
+
+R2 버킷은 공개 읽기 도메인을 붙이고, 앱은 그 URL을 그대로 렌더링합니다. 원본 파일은 `problems/{nodeId}/{problemId}.{ext}` 같은 경로로 두면 관리가 쉽습니다.
 
 ## 주의
 
