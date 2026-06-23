@@ -48,6 +48,7 @@ import {
   loadUserProfile,
   loadUsers,
   markAiGuideUsed,
+  markFirstLoginChatNotified,
   saveAiUsageLog,
   saveAttempt,
   seedCatalogIfNeeded,
@@ -75,6 +76,9 @@ const guideActions = [
   { key: "concept", label: "개념 다시보기", icon: BookOpen, xpPenalty: true },
 ];
 
+const googleChatWebhookUrl =
+  "https://chat.googleapis.com/v1/spaces/AAQAsHoLq4o/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=zE3M4fD3RWyo3bBzQmJgQeDaIceidFpOpimu5KSvilw";
+
 const gradeOptions = ["중1", "중2", "중3", "고1", "고2", "고3"];
 const problemLookup = new Map(generatedProblems.map((problem) => [problem.id, problem]));
 const defaultSkillId = "m1-numbers";
@@ -94,6 +98,24 @@ function chooseProblemId({ problems, savedLocation, skillId }) {
   if (problems.some((problem) => problem.id === savedProblemId)) return savedProblemId;
   if (skillId === defaultSkillId && problems.some((problem) => problem.id === defaultProblemId)) return defaultProblemId;
   return problems[0]?.id || "";
+}
+
+function buildFirstLoginChatMessage(nextUser, nextProfile) {
+  const loggedAt = new Intl.DateTimeFormat("ko-KR", {
+    timeZone: "Asia/Seoul",
+    dateStyle: "medium",
+    timeStyle: "medium",
+  }).format(new Date());
+
+  return [
+    "최초 로그인 알림",
+    `이름: ${nextProfile.displayName || nextUser.displayName || "이름 없음"}`,
+    `이메일: ${nextProfile.email || nextUser.email || "-"}`,
+    `역할: ${nextProfile.role || "student"}`,
+    `학년: ${nextProfile.grade || "-"}`,
+    `UID: ${nextUser.uid}`,
+    `시간: ${loggedAt}`,
+  ].join("\n");
 }
 
 export default function App() {
@@ -157,6 +179,11 @@ export default function App() {
         try {
           const nextProfile = await ensureUserProfile(nextUser);
           setProfile((current) => ({ ...current, ...nextProfile }));
+          if (nextProfile.firstLoginChatNotificationPending && !nextProfile.firstLoginChatNotifiedAt) {
+            notifyFirstLogin(nextUser, nextProfile)
+              .then(() => markFirstLoginChatNotified(nextUser.uid))
+              .catch((error) => console.error("First login notification failed:", error));
+          }
           setSelectedSkillId(nextProfile.lastSkillId || defaultSkillId);
           setSelectedProblemId(nextProfile.lastProblemId || defaultProblemId);
           if (nextUser.email === "totoriverce@gmail.com") {
@@ -174,6 +201,16 @@ export default function App() {
       setAuthReady(true);
     });
   }, []);
+
+  async function notifyFirstLogin(nextUser, nextProfile) {
+    const text = buildFirstLoginChatMessage(nextUser, nextProfile);
+    await fetch(googleChatWebhookUrl, {
+      method: "POST",
+      mode: "no-cors",
+      headers: { "Content-Type": "text/plain;charset=UTF-8" },
+      body: JSON.stringify({ text }),
+    });
+  }
 
   useEffect(() => {
     setReviewCounts(profile.aiGuideReviewCounts || {});

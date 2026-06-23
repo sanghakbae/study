@@ -198,6 +198,19 @@ export async function suppressLoginGuideForSevenDays(uid) {
   );
 }
 
+export async function markFirstLoginChatNotified(uid) {
+  if (!uid) return;
+  await setDoc(
+    doc(db, "users", uid),
+    {
+      firstLoginChatNotifiedAt: Date.now(),
+      firstLoginChatNotificationPending: false,
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true },
+  );
+}
+
 export async function markAiGuideUsed({ uid, problemId }) {
   if (!uid || !problemId) return;
   await updateDoc(doc(db, "users", uid), {
