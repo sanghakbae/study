@@ -1755,6 +1755,7 @@ li:nth-child(3) .rank-num { color: #b45309; }
   min-width: 0;
   white-space: nowrap;
   flex-direction: row;
+  justify-content: flex-start;
   gap: 4px;
   padding: 1px 6px;
   min-height: 0;
