@@ -1382,6 +1382,73 @@ li:nth-child(3) .rank-num { color: #b45309; }
   gap: 4px;
 }
 
+.activity-table-wrap {
+  width: 100%;
+  overflow: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 5px;
+  background: #fff;
+  margin-bottom: 10px;
+}
+
+.activity-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  min-width: 620px;
+}
+
+.activity-table th,
+.activity-table td {
+  height: 34px;
+  padding: 7px 8px;
+  border-bottom: 1px solid #e2e8f0;
+  text-align: left;
+  vertical-align: middle;
+  font-size: 0.76rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.activity-table th {
+  background: #f8fafc;
+  color: #475569;
+  font-weight: 950;
+}
+
+.activity-table th:nth-child(1),
+.activity-table td:nth-child(1) {
+  width: 150px;
+}
+
+.activity-table th:nth-child(2),
+.activity-table td:nth-child(2) {
+  width: 170px;
+}
+
+.activity-table th:last-child,
+.activity-table td:last-child {
+  width: 92px;
+  text-align: right;
+}
+
+.activity-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.activity-table strong {
+  font-weight: 950;
+}
+
+.activity-table .positive {
+  color: #0f766e;
+}
+
+.activity-table .wrong-status {
+  color: #b45309;
+}
+
 .activity-subtitle {
   margin: 8px 0 4px;
   font-size: 0.75rem;

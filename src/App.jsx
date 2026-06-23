@@ -1192,27 +1192,58 @@ function ChildActivityLog({ children, attempts }) {
       {topWrong.length > 0 && (
         <>
           <p className="activity-subtitle">자주 틀리는 문제</p>
-          <div className="wrong-list">
-            {topWrong.map((item) => (
-              <div className="wrong-row" key={`${item.uid}-${item.nodeId}-${item.problemId}`}>
-                <strong>{showChildName ? `${childName.get(item.uid) || "자녀"} · ${item.title}` : item.title}</strong>
-                <span>{item.prompt || item.nodeId}</span>
-                <b>{item.count}회</b>
-              </div>
-            ))}
+          <div className="activity-table-wrap">
+            <table className="activity-table">
+              <thead>
+                <tr>
+                  {showChildName && <th>자녀</th>}
+                  <th>구분</th>
+                  <th>문제</th>
+                  <th>상태</th>
+                </tr>
+              </thead>
+              <tbody>
+                {topWrong.map((item) => (
+                  <tr key={`${item.uid}-${item.nodeId}-${item.problemId}`}>
+                    {showChildName && <td>{childName.get(item.uid) || "자녀"}</td>}
+                    <td>{item.title}</td>
+                    <td>{item.prompt || item.nodeId}</td>
+                    <td><strong className="wrong-status">오답 {item.count}회</strong></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </>
       )}
       {childAttempts.length > 0 && (
         <>
           <p className="activity-subtitle">최근 활동</p>
-          {childAttempts.map((a) => (
-            <div className="activity-row" key={a.id}>
-              <strong>{showChildName ? `${childName.get(a.uid) || "자녀"} · ${getProblemText(a).title}` : getProblemText(a).title}</strong>
-              <span>{getProblemText(a).prompt || `${a.nodeId} · ${a.problemId}`}</span>
-              <small className={a.completed ? "positive" : ""}>{a.completed ? "해결 완료" : "풀이 저장"}</small>
-            </div>
-          ))}
+          <div className="activity-table-wrap">
+            <table className="activity-table">
+              <thead>
+                <tr>
+                  {showChildName && <th>자녀</th>}
+                  <th>구분</th>
+                  <th>문제</th>
+                  <th>상태</th>
+                </tr>
+              </thead>
+              <tbody>
+                {childAttempts.map((a) => {
+                  const problemText = getProblemText(a);
+                  return (
+                    <tr key={a.id}>
+                      {showChildName && <td>{childName.get(a.uid) || "자녀"}</td>}
+                      <td>{problemText.title}</td>
+                      <td>{problemText.prompt || `${a.nodeId} · ${a.problemId}`}</td>
+                      <td><strong className={a.completed ? "positive" : ""}>{a.completed ? "해결 완료" : "풀이 저장"}</strong></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </>
       )}
     </div>
