@@ -568,22 +568,34 @@ export default function App() {
   );
 }
 
-function AdminPage({ user, profile, leaders, members, attempts, onRoleUpdate }) {
+function AdminPage({ user, profile, members, attempts, onRoleUpdate }) {
+  const [activeMenu, setActiveMenu] = useState("stats");
+
   return (
     <main className="app-shell admin-shell">
       <Topbar user={user} profile={profile} />
       <section className="admin-layout">
-        <Leaderboard leaders={leaders} currentUid={user.uid} />
-        <section className="admin-panel">
-          <div className="section-title">
-            <ShieldCheck size={18} />
-            <h2>관리자 페이지</h2>
-          </div>
-          <MemberManager members={members} onRoleUpdate={onRoleUpdate} />
-        </section>
-        <section className="admin-panel">
-          <ActivityPanel members={members} attempts={attempts} />
-        </section>
+        <aside className="admin-sidebar">
+          <button className={activeMenu === "members" ? "active" : ""} onClick={() => setActiveMenu("members")}>
+            <Users size={16} />
+            회원 관리
+          </button>
+          <button className={activeMenu === "stats" ? "active" : ""} onClick={() => setActiveMenu("stats")}>
+            <TrendingUp size={16} />
+            학습 통계
+          </button>
+        </aside>
+        {activeMenu === "members" ? (
+          <section className="admin-panel">
+            <div className="section-title">
+              <ShieldCheck size={18} />
+              <h2>회원 관리</h2>
+            </div>
+            <MemberManager members={members} onRoleUpdate={onRoleUpdate} />
+          </section>
+        ) : (
+          <AdminLearningDashboard members={members} attempts={attempts} />
+        )}
       </section>
     </main>
   );
@@ -954,6 +966,20 @@ function formatStudentName(member) {
   return member?.grade ? `${name} (${member.grade})` : name;
 }
 
+function formatAdminMemberName(member, members) {
+  const role = member?.role || "student";
+  const name = member?.displayName || member?.email || "이름 없음";
+  if (role === "student") return `학생(${name})`;
+  if (role === "parents") {
+    const childNames = (member.parentOf || [])
+      .map((childUid) => members.find((item) => item.uid === childUid)?.displayName)
+      .filter(Boolean);
+    return `학부모(${childNames.length ? childNames.join(", ") : "자녀 미등록"})`;
+  }
+  if (role === "admin") return `관리자(${name})`;
+  return `${role}(${name})`;
+}
+
 function maskName(name) {
   if (!name) return "러너";
   const chars = [...name];
@@ -1014,7 +1040,7 @@ function MemberManager({ members, onRoleUpdate }) {
               {members.slice(0, 80).map((member) => (
                 <tr key={member.uid}>
                   <td>
-                    <strong>{formatStudentName(member)}</strong>
+                    <strong>{formatAdminMemberName(member, members)}</strong>
                     <small>{member.email}</small>
                   </td>
                   <td>
@@ -1090,6 +1116,181 @@ function MemberManager({ members, onRoleUpdate }) {
       )}
     </div>
   );
+}
+
+function AdminLearningDashboard({ members, attempts }) {
+  const students = members.filter((member) => member.role === "student");
+  const completedAttempts = attempts.filter((attempt) => attempt.completed);
+  const wrongAttempts = attempts.filter((attempt) => attempt.status === "wrong" || attempt.wrong);
+  const helpedAttempts = attempts.filter((attempt) => getHelpUsed(attempt).length);
+  const totalSolved = students.reduce((sum, student) => sum + (Number(student.solvedCount) || 0), 0);
+  const avgSolved = students.length ? Math.round(totalSolved / students.length) : 0;
+  const accuracy = completedAttempts.length + wrongAttempts.length
+    ? Math.round((completedAttempts.length / (completedAttempts.length + wrongAttempts.length)) * 100)
+    : 0;
+
+  const studentBars = students
+    .map((student) => ({
+      label: formatAdminMemberName(student, members),
+      value: Number(student.solvedCount) || 0,
+    }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 8);
+
+  const solvedByCategory = groupAttemptsForChart(completedAttempts, (attempt) => getProblemText(attempt).category).slice(0, 8);
+  const wrongByCategory = groupAttemptsForChart(wrongAttempts, (attempt) => getProblemText(attempt).category).slice(0, 8);
+  const helpByType = buildHelpUsageChart(helpedAttempts);
+  const recentTrend = buildRecentTrendChart(attempts);
+  const recentAttempts = attempts.slice(0, 18);
+
+  return (
+    <section className="admin-dashboard">
+      <div className="section-title">
+        <TrendingUp size={18} />
+        <h2>학습 통계</h2>
+      </div>
+      <div className="admin-summary-grid">
+        <StatCard label="전체 학생" value={`${students.length}명`} />
+        <StatCard label="해결 문제" value={`${totalSolved}개`} />
+        <StatCard label="평균 해결" value={`${avgSolved}개`} />
+        <StatCard label="정답률" value={`${accuracy}%`} />
+      </div>
+      <div className="admin-chart-grid">
+        <BarChartCard title="학생별 해결 문제" items={studentBars} tone="teal" />
+        <BarChartCard title="단원별 해결 문제" items={solvedByCategory} tone="blue" />
+        <BarChartCard title="자주 틀리는 단원" items={wrongByCategory} tone="amber" />
+        <BarChartCard title="도움 사용량" items={helpByType} tone="slate" />
+      </div>
+      <div className="admin-wide-chart">
+        <ColumnChartCard title="최근 7일 학습 흐름" items={recentTrend} />
+      </div>
+      <div className="admin-records-panel">
+        <h3>최근 학습 기록</h3>
+        {recentAttempts.length ? (
+          <div className="activity-table-wrap">
+            <table className="activity-table admin-activity-table">
+              <thead>
+                <tr>
+                  <th className="col-date">날짜</th>
+                  <th className="col-child">학생</th>
+                  <th className="col-category">구분</th>
+                  <th className="col-problem">문제</th>
+                  <th className="col-answer">입력 답</th>
+                  <th className="col-status">결과</th>
+                  <th className="col-help">사용한 도움</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recentAttempts.map((attempt) => {
+                  const member = members.find((item) => item.uid === attempt.uid);
+                  const problemText = getProblemText(attempt);
+                  return (
+                    <tr key={attempt.id}>
+                      <td className="col-date">{formatAttemptDate(attempt)}</td>
+                      <td className="col-child">{member ? formatAdminMemberName(member, members) : "학생"}</td>
+                      <td className="col-category">{problemText.category}</td>
+                      <td className="col-problem">{problemText.prompt || `${attempt.nodeId} · ${attempt.problemId}`}</td>
+                      <td className="col-answer">{getSubmittedAnswer(attempt) || "-"}</td>
+                      <td className="col-status"><strong className={getAttemptResultClass(attempt)}>{getAttemptResult(attempt)}</strong></td>
+                      <td className="col-help">{formatHelpUsed(attempt)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p>아직 저장된 학습 기록이 없습니다.</p>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function StatCard({ label, value }) {
+  return (
+    <div className="admin-stat-card">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function BarChartCard({ title, items, tone }) {
+  const max = Math.max(1, ...items.map((item) => item.value));
+  return (
+    <div className={`admin-chart-card ${tone}`}>
+      <h3>{title}</h3>
+      {items.length ? (
+        <div className="admin-bar-list">
+          {items.map((item) => (
+            <div className="admin-bar-row" key={item.label}>
+              <span>{item.label}</span>
+              <div className="admin-bar-track">
+                <i style={{ width: `${Math.max(6, Math.round((item.value / max) * 100))}%` }} />
+              </div>
+              <b>{item.value}</b>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p>표시할 데이터가 없습니다.</p>
+      )}
+    </div>
+  );
+}
+
+function ColumnChartCard({ title, items }) {
+  const max = Math.max(1, ...items.map((item) => item.value));
+  return (
+    <div className="admin-chart-card admin-column-card">
+      <h3>{title}</h3>
+      <div className="admin-column-chart">
+        {items.map((item) => (
+          <div className="admin-column" key={item.label}>
+            <div className="admin-column-track">
+              <i style={{ height: `${Math.max(8, Math.round((item.value / max) * 100))}%` }} />
+            </div>
+            <b>{item.value}</b>
+            <span>{item.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function groupAttemptsForChart(items, labelFn) {
+  const grouped = new Map();
+  for (const item of items) {
+    const label = labelFn(item) || "기타";
+    grouped.set(label, (grouped.get(label) || 0) + 1);
+  }
+  return Array.from(grouped, ([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
+}
+
+function buildHelpUsageChart(attempts) {
+  const labels = { next: "풀이 방향", hint: "힌트", concept: "개념" };
+  const grouped = new Map();
+  for (const attempt of attempts) {
+    getHelpUsed(attempt).forEach((item) => grouped.set(labels[item] || item, (grouped.get(labels[item] || item) || 0) + 1));
+  }
+  return Array.from(grouped, ([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
+}
+
+function buildRecentTrendChart(attempts) {
+  const now = new Date();
+  return Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(now);
+    date.setDate(now.getDate() - (6 - index));
+    const key = date.toISOString().slice(0, 10);
+    const label = new Intl.DateTimeFormat("ko-KR", { month: "2-digit", day: "2-digit" }).format(date);
+    const value = attempts.filter((attempt) => {
+      const time = getAttemptTime(attempt);
+      return time && new Date(time).toISOString().slice(0, 10) === key;
+    }).length;
+    return { label, value };
+  });
 }
 
 function ParentInsightPanel({ profile, members, attempts, onRegisterChild }) {
