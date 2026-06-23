@@ -58,10 +58,13 @@ button:disabled {
 .login-screen,
 .error-screen {
   min-height: 100vh;
+  min-height: 100svh;
+  min-height: 100dvh;
   width: 100%;
   display: grid;
   place-items: center;
   background: #111827;
+  overflow: auto;
 }
 
 .error-screen section {
@@ -97,6 +100,8 @@ button:disabled {
 .login-art {
   width: min(100%, 1080px);
   min-height: 100vh;
+  min-height: 100svh;
+  min-height: 100dvh;
   position: relative;
   display: grid;
   place-items: center;
@@ -3109,9 +3114,13 @@ li:nth-child(3) .rank-num { color: #b45309; }
     grid-template-columns: minmax(0, 78%) 8px minmax(0, 1fr);
   }
 
-  .admin-layout,
-  .parent-layout {
+  .admin-layout {
     grid-template-columns: 240px minmax(0, 1fr);
+    overflow: auto;
+  }
+
+  .parent-layout {
+    grid-template-columns: minmax(0, 1fr);
     overflow: auto;
   }
 
@@ -3484,6 +3493,37 @@ li:nth-child(3) .rank-num { color: #b45309; }
   }
 }
 
+@media (min-width: 721px) and (max-width: 1180px) {
+  .parent-shell {
+    height: auto;
+    min-height: 100vh;
+    overflow: auto;
+  }
+
+  .parent-layout {
+    display: flex;
+    flex-direction: column;
+    align-content: start;
+    overflow: visible;
+  }
+
+  .parent-layout > .leader-panel {
+    order: 1;
+    flex: 0 0 auto;
+    width: 100%;
+    min-height: auto;
+    overflow: visible;
+  }
+
+  .parent-layout > .parent-insight {
+    order: 2;
+    flex: 0 0 auto;
+    width: 100%;
+    min-height: auto;
+    overflow: visible;
+  }
+}
+
 @media (max-width: 720px) {
   html,
   body,
@@ -3494,6 +3534,29 @@ li:nth-child(3) .rank-num { color: #b45309; }
     min-height: 100%;
     overflow-x: hidden;
     overflow-y: auto;
+  }
+
+  .login-screen {
+    min-height: 100svh;
+    min-height: 100dvh;
+    width: 100%;
+    place-items: center;
+    overflow: hidden;
+  }
+
+  .login-art {
+    width: 100%;
+    min-height: 100svh;
+    min-height: 100dvh;
+    padding: 16px;
+    place-items: center;
+  }
+
+  .login-panel {
+    width: min(100%, 520px);
+    max-width: calc(100vw - 32px);
+    margin: 0 auto;
+    padding: 24px 18px;
   }
 
   .app-shell {
@@ -3524,7 +3587,8 @@ li:nth-child(3) .rank-num { color: #b45309; }
 
   .login-guide-backdrop {
     padding: 10px;
-    align-items: start;
+    align-items: center;
+    justify-items: center;
     overflow: auto;
   }
 
@@ -3821,6 +3885,46 @@ li:nth-child(3) .rank-num { color: #b45309; }
 
   .notebook-panel.mobile-solve-collapsed .solve-workspace {
     display: none;
+  }
+
+  .parent-insight .activity-table-wrap {
+    overflow-x: hidden;
+  }
+
+  .parent-insight .activity-table {
+    table-layout: auto;
+    min-width: 100%;
+  }
+
+  .parent-insight .activity-table th,
+  .parent-insight .activity-table td {
+    height: 24px;
+    padding: 2px 3px;
+    font-size: 0.7rem;
+  }
+
+  .parent-insight .activity-table .col-child {
+    width: 46px;
+  }
+
+  .parent-insight .activity-table .col-date {
+    width: 30px;
+  }
+
+  .parent-insight .activity-table .col-category {
+    width: 58px;
+  }
+
+  .parent-insight .activity-table .col-problem {
+    width: auto;
+    min-width: 70px;
+    text-align: left;
+  }
+
+  .parent-insight .activity-table .col-answer,
+  .parent-insight .activity-table .col-status,
+  .parent-insight .activity-table .col-help {
+    width: 40px;
   }
 
   .user-pill,

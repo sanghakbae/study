@@ -22,7 +22,9 @@ export async function ensureUserProfile(user) {
   const snap = await getDoc(ref);
   const role = user.email === "totoriverce@gmail.com" ? "admin" : "student";
   const isAdmin = role === "admin";
+  let isNewUser = false;
   if (!snap.exists()) {
+    isNewUser = true;
     await setDoc(ref, {
       uid: user.uid,
       displayName: user.displayName || "수학 러너",
@@ -38,6 +40,8 @@ export async function ensureUserProfile(user) {
       lastSkillId: "",
       lastProblemId: "",
       loginGuideDismissUntil: 0,
+      firstLoginChatNotifiedAt: 0,
+      firstLoginChatNotificationPending: true,
       aiGuideReviewCounts: {},
       createdAt: serverTimestamp(),
       lastSeenAt: serverTimestamp(),
@@ -48,7 +52,7 @@ export async function ensureUserProfile(user) {
       ...(isAdmin ? { role: "admin", onboardingComplete: true } : {}),
     });
   }
-  return (await getDoc(ref)).data();
+  return { ...(await getDoc(ref)).data(), isNewUser };
 }
 
 export async function seedCatalogIfNeeded() {

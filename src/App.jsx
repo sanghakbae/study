@@ -1187,10 +1187,6 @@ function Leaderboard({ leaders, currentUid, profile, showMyStats = true, classNa
   const level = Math.floor(xp / 200) + 1;
   const xpPct = Math.min(100, Math.round((xp % 200) / 200 * 100));
   const visibleLeaders = displayLeaders.slice(0, 5);
-  if (currentUid && !visibleLeaders.some((leader) => leader.uid === currentUid)) {
-    const currentLeader = displayLeaders.find((leader) => leader.uid === currentUid);
-    if (currentLeader) visibleLeaders.push(currentLeader);
-  }
 
   return (
     <section className={`leader-panel ${className}`}>
@@ -2218,16 +2214,6 @@ function ParentInsightPanel({ profile, members, attempts, onRegisterChild }) {
                   <small>DB 기준</small>
                 </div>
               </div>
-              <div className="child-rank-context">
-                {above ? (
-                  <span>위: {formatStudentName(above)} · {Math.max(0, (above.xp || 0) - (child.xp || 0)).toLocaleString()} XP 차이</span>
-                ) : (
-                  <span>현재 전체 1위입니다.</span>
-                )}
-                {below && (
-                  <span>아래: {formatStudentName(below)} · {Math.max(0, (child.xp || 0) - (below.xp || 0)).toLocaleString()} XP 차이</span>
-                )}
-              </div>
               <div className="child-stats">
                 <div className="child-stat">
                   <label>XP</label>
@@ -2511,13 +2497,13 @@ function ChildActivityLog({ children, attempts }) {
               <tbody>
                 {topWrong.map((item) => (
                   <tr key={`${item.uid}-${item.nodeId}-${item.problemId}`}>
-                    {showChildName && <td className="col-child">{childName.get(item.uid) || "자녀"}</td>}
-                    <td className="col-date">-</td>
-                    <td className="col-category">{item.category}</td>
-                    <td className="col-problem">{item.prompt || item.nodeId}</td>
-                    <td className="col-answer">{item.submittedAnswer || "기록 없음"}</td>
-                    <td className="col-status"><strong className="wrong-status">오답 {item.count}회</strong></td>
-                    <td className="col-help">-</td>
+                    {showChildName && <td className="col-child" data-label="자녀">{childName.get(item.uid) || "자녀"}</td>}
+                    <td className="col-date" data-label="날짜">-</td>
+                    <td className="col-category" data-label="구분">{item.category}</td>
+                    <td className="col-problem" data-label="문제">{item.prompt || item.nodeId}</td>
+                    <td className="col-answer" data-label="입력 답">{item.submittedAnswer || "기록 없음"}</td>
+                    <td className="col-status" data-label="결과"><strong className="wrong-status">오답 {item.count}회</strong></td>
+                    <td className="col-help" data-label="사용한 도움">-</td>
                   </tr>
                 ))}
               </tbody>
@@ -2546,13 +2532,13 @@ function ChildActivityLog({ children, attempts }) {
                   const problemText = getProblemText(a);
                   return (
                     <tr key={a.id}>
-                      {showChildName && <td className="col-child">{childName.get(a.uid) || "자녀"}</td>}
-                      <td className="col-date">{formatAttemptDate(a)}</td>
-                      <td className="col-category">{problemText.category}</td>
-                      <td className="col-problem">{problemText.prompt || `${a.nodeId} · ${a.problemId}`}</td>
-                      <td className="col-answer">{getSubmittedAnswer(a) || (a.restoredFromProgress || a.restoredFromProfile ? "기록 없음" : "-")}</td>
-                      <td className="col-status"><strong className={getAttemptResultClass(a)}>{getAttemptResult(a)}</strong></td>
-                      <td className="col-help">{a.restoredFromProgress || a.restoredFromProfile ? "완료 기록" : formatHelpUsed(a)}</td>
+                      {showChildName && <td className="col-child" data-label="자녀">{childName.get(a.uid) || "자녀"}</td>}
+                      <td className="col-date" data-label="날짜">{formatAttemptDate(a)}</td>
+                      <td className="col-category" data-label="구분">{problemText.category}</td>
+                      <td className="col-problem" data-label="문제">{problemText.prompt || `${a.nodeId} · ${a.problemId}`}</td>
+                      <td className="col-answer" data-label="입력 답">{getSubmittedAnswer(a) || (a.restoredFromProgress || a.restoredFromProfile ? "기록 없음" : "-")}</td>
+                      <td className="col-status" data-label="상태"><strong className={getAttemptResultClass(a)}>{getAttemptResult(a)}</strong></td>
+                      <td className="col-help" data-label="사용한 도움">{a.restoredFromProgress || a.restoredFromProfile ? "완료 기록" : formatHelpUsed(a)}</td>
                     </tr>
                   );
                 })}
