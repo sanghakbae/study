@@ -970,12 +970,7 @@ function formatAdminMemberName(member, members) {
   const role = member?.role || "student";
   const name = member?.displayName || member?.email || "이름 없음";
   if (role === "student") return `학생(${name})`;
-  if (role === "parents") {
-    const childNames = (member.parentOf || [])
-      .map((childUid) => members.find((item) => item.uid === childUid)?.displayName)
-      .filter(Boolean);
-    return `학부모(${childNames.length ? childNames.join(", ") : "자녀 미등록"})`;
-  }
+  if (role === "parents") return `학부모(${name})`;
   if (role === "admin") return `관리자(${name})`;
   return `${role}(${name})`;
 }
@@ -1028,7 +1023,7 @@ function MemberManager({ members, onRoleUpdate }) {
               <tr>
                 <th>회원</th>
                 <th>이름</th>
-                <th>등급</th>
+                <th>학년</th>
                 <th>XP</th>
                 <th>해결</th>
                 <th>초기화</th>
@@ -1054,8 +1049,8 @@ function MemberManager({ members, onRoleUpdate }) {
                     <input
                       defaultValue={member.grade || ""}
                       onBlur={(event) => saveMember(member, { grade: event.target.value })}
-                      aria-label="등급"
-                      placeholder="등급"
+                      aria-label="학년"
+                      placeholder="학년"
                     />
                   </td>
                   <td>
@@ -1129,17 +1124,10 @@ function AdminLearningDashboard({ members, attempts }) {
     ? Math.round((completedAttempts.length / (completedAttempts.length + wrongAttempts.length)) * 100)
     : 0;
 
-  const studentBars = students
-    .map((student) => ({
-      label: formatAdminMemberName(student, members),
-      value: Number(student.solvedCount) || 0,
-    }))
-    .sort((a, b) => b.value - a.value)
-    .slice(0, 8);
-
-  const solvedByCategory = groupAttemptsForChart(completedAttempts, (attempt) => getProblemText(attempt).category).slice(0, 8);
-  const wrongByCategory = groupAttemptsForChart(wrongAttempts, (attempt) => getProblemText(attempt).category).slice(0, 8);
-  const helpByType = buildHelpUsageChart(helpedAttempts);
+  const skillStatus = buildSkillStatusChart(completedAttempts, students);
+  const skillSolved = groupAttemptsForChart(completedAttempts, (attempt) => getSkillTitle(attempt.nodeId)).slice(0, 8);
+  const skillWrong = groupAttemptsForChart(wrongAttempts, (attempt) => getSkillTitle(attempt.nodeId)).slice(0, 8);
+  const skillHelp = buildSkillHelpChart(helpedAttempts);
   const recentTrend = buildRecentTrendChart(attempts);
   const recentAttempts = attempts.slice(0, 18);
 
@@ -1156,10 +1144,10 @@ function AdminLearningDashboard({ members, attempts }) {
         <StatCard label="정답률" value={`${accuracy}%`} />
       </div>
       <div className="admin-chart-grid">
-        <BarChartCard title="학생별 해결 문제" items={studentBars} tone="teal" />
-        <BarChartCard title="단원별 해결 문제" items={solvedByCategory} tone="blue" />
-        <BarChartCard title="자주 틀리는 단원" items={wrongByCategory} tone="amber" />
-        <BarChartCard title="도움 사용량" items={helpByType} tone="slate" />
+        <DonutChartCard title="전체 스킬 완료 현황" items={skillStatus} centerLabel="완료" />
+        <RadarChartCard title="스킬별 해결 레이더" items={skillSolved} tone="teal" />
+        <RadarChartCard title="스킬별 오답 레이더" items={skillWrong} tone="amber" />
+        <RadarChartCard title="스킬별 도움 레이더" items={skillHelp} tone="slate" />
       </div>
       <div className="admin-wide-chart">
         <ColumnChartCard title="최근 7일 학습 흐름" items={recentTrend} />
@@ -1216,7 +1204,7 @@ function StatCard({ label, value }) {
   );
 }
 
-function BarChartCard({ title, items, tone }) {
+function BarChartCard({ title, items, tone, suffix = "" }) {
   const max = Math.max(1, ...items.map((item) => item.value));
   return (
     <div className={`admin-chart-card ${tone}`}>
@@ -1229,12 +1217,119 @@ function BarChartCard({ title, items, tone }) {
               <div className="admin-bar-track">
                 <i style={{ width: `${Math.max(6, Math.round((item.value / max) * 100))}%` }} />
               </div>
-              <b>{item.value}</b>
+              <b>{item.value}{suffix}</b>
             </div>
           ))}
         </div>
       ) : (
         <p>표시할 데이터가 없습니다.</p>
+      )}
+    </div>
+  );
+}
+
+function DonutChartCard({ title, items, centerLabel }) {
+  const total = Math.max(1, items.reduce((sum, item) => sum + item.value, 0));
+  const colors = ["#14b8a6", "#38bdf8", "#f59e0b", "#64748b", "#8b5cf6", "#ef4444", "#22c55e", "#94a3b8"];
+  const centerValue = centerLabel === "완료" ? items[0]?.value || 0 : items.reduce((sum, item) => sum + item.value, 0);
+  let current = 0;
+  const gradient = items.map((item, index) => {
+    const start = current;
+    const end = current + (item.value / total) * 100;
+    current = end;
+    return `${colors[index % colors.length]} ${start}% ${end}%`;
+  }).join(", ");
+
+  return (
+    <div className="admin-chart-card admin-donut-card">
+      <h3>{title}</h3>
+      {items.length ? (
+        <div className="admin-donut-layout">
+          <div className="admin-donut" style={{ background: `conic-gradient(${gradient})` }}>
+            <div>
+              <strong>{centerValue}</strong>
+              <span>{centerLabel}</span>
+            </div>
+          </div>
+          <div className="admin-donut-legend">
+            {items.map((item, index) => (
+              <div key={item.label}>
+                <i style={{ background: colors[index % colors.length] }} />
+                <span>{item.label}</span>
+                <b>{item.value}</b>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <p>표시할 데이터가 없습니다.</p>
+      )}
+    </div>
+  );
+}
+
+function RadarChartCard({ title, items, tone }) {
+  const chartItems = items.slice(0, 8);
+  const max = Math.max(1, ...chartItems.map((item) => item.value));
+  const center = 82;
+  const radius = 56;
+  const colorMap = {
+    teal: "#14b8a6",
+    amber: "#f59e0b",
+    slate: "#64748b",
+  };
+  const color = colorMap[tone] || "#14b8a6";
+  const pointFor = (index, valueRadius) => {
+    const angle = -Math.PI / 2 + (Math.PI * 2 * index) / chartItems.length;
+    return {
+      x: center + Math.cos(angle) * valueRadius,
+      y: center + Math.sin(angle) * valueRadius,
+    };
+  };
+  const polygon = chartItems
+    .map((item, index) => {
+      const point = pointFor(index, radius * (item.value / max));
+      return `${point.x},${point.y}`;
+    })
+    .join(" ");
+
+  return (
+    <div className={`admin-chart-card admin-radar-card ${tone}`}>
+      <h3>{title}</h3>
+      {chartItems.length >= 3 ? (
+        <div className="admin-radar-layout">
+          <svg viewBox="0 0 164 164" role="img" aria-label={title}>
+            {[0.33, 0.66, 1].map((scale) => (
+              <polygon
+                key={scale}
+                className="radar-grid"
+                points={chartItems.map((_, index) => {
+                  const point = pointFor(index, radius * scale);
+                  return `${point.x},${point.y}`;
+                }).join(" ")}
+              />
+            ))}
+            {chartItems.map((_, index) => {
+              const point = pointFor(index, radius);
+              return <line className="radar-axis" key={index} x1={center} y1={center} x2={point.x} y2={point.y} />;
+            })}
+            <polygon className="radar-area" points={polygon} style={{ fill: color, stroke: color }} />
+            {chartItems.map((item, index) => {
+              const point = pointFor(index, radius * (item.value / max));
+              return <circle className="radar-point" key={item.label} cx={point.x} cy={point.y} r="2.8" style={{ fill: color }} />;
+            })}
+          </svg>
+          <div className="admin-radar-legend">
+            {chartItems.map((item) => (
+              <div key={item.label}>
+                <span>{item.label}</span>
+                <b>{item.value}</b>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <p>레이더 차트는 스킬 데이터가 3개 이상일 때 표시됩니다.</p>
       )}
     </div>
   );
@@ -1269,11 +1364,44 @@ function groupAttemptsForChart(items, labelFn) {
   return Array.from(grouped, ([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
 }
 
-function buildHelpUsageChart(attempts) {
-  const labels = { next: "풀이 방향", hint: "힌트", concept: "개념" };
+function getSkillTitle(nodeId) {
+  return curriculumNodes.find((node) => node.id === nodeId)?.title || nodeId || "기타";
+}
+
+function buildSkillStatusChart(completedAttempts, students) {
+  const completedByStudentSkill = new Map();
+  for (const attempt of completedAttempts) {
+    const key = `${attempt.uid}-${attempt.nodeId}`;
+    const current = completedByStudentSkill.get(key) || new Set();
+    current.add(attempt.problemId);
+    completedByStudentSkill.set(key, current);
+  }
+
+  let completed = 0;
+  let inProgress = 0;
+
+  for (const node of curriculumNodes) {
+    const counts = students.map((student) => completedByStudentSkill.get(`${student.uid}-${node.id}`)?.size || 0);
+    if (counts.some((count) => count >= 50)) {
+      completed += 1;
+    } else if (counts.some((count) => count > 0)) {
+      inProgress += 1;
+    }
+  }
+
+  const locked = Math.max(0, curriculumNodes.length - completed - inProgress);
+  return [
+    { label: "완료 스킬", value: completed },
+    { label: "진행 중 스킬", value: inProgress },
+    { label: "미완료 스킬", value: locked },
+  ];
+}
+
+function buildSkillHelpChart(attempts) {
   const grouped = new Map();
   for (const attempt of attempts) {
-    getHelpUsed(attempt).forEach((item) => grouped.set(labels[item] || item, (grouped.get(labels[item] || item) || 0) + 1));
+    const label = getSkillTitle(attempt.nodeId);
+    grouped.set(label, (grouped.get(label) || 0) + getHelpUsed(attempt).length);
   }
   return Array.from(grouped, ([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
 }

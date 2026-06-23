@@ -1,7 +1,9 @@
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css");
+
 :root {
   color-scheme: light;
   font-family:
-    Pretendard, "Pretendard Variable", "Noto Sans KR", "Apple SD Gothic Neo",
+    "Pretendard Variable", Pretendard, "Noto Sans KR", "Apple SD Gothic Neo",
     "Malgun Gothic", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont,
     sans-serif;
   background: #eef2f7;
@@ -25,6 +27,10 @@ body,
 body {
   overflow: hidden;
   overscroll-behavior: none;
+  font-family:
+    "Pretendard Variable", Pretendard, "Noto Sans KR", "Apple SD Gothic Neo",
+    "Malgun Gothic", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont,
+    sans-serif;
 }
 
 body.drawing-on-canvas {
@@ -444,12 +450,18 @@ button:disabled {
   padding: 12px;
 }
 
+.admin-chart-card {
+  height: 240px;
+  overflow: hidden;
+}
+
 .admin-chart-card h3,
 .admin-records-panel h3 {
   margin: 0 0 10px;
   color: #111827;
   font-size: 0.9rem;
-  font-weight: 950;
+  font-weight: 850;
+  letter-spacing: 0;
 }
 
 .admin-chart-card p,
@@ -462,6 +474,8 @@ button:disabled {
 .admin-bar-list {
   display: grid;
   gap: 8px;
+  max-height: 186px;
+  overflow: auto;
 }
 
 .admin-bar-row {
@@ -505,12 +519,149 @@ button:disabled {
 .admin-chart-card.amber .admin-bar-track i { background: #f59e0b; }
 .admin-chart-card.slate .admin-bar-track i { background: #64748b; }
 
+.admin-donut-layout {
+  height: 188px;
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  align-items: center;
+  gap: 18px;
+}
+
+.admin-donut {
+  width: 150px;
+  height: 150px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.08);
+}
+
+.admin-donut > div {
+  width: 92px;
+  height: 92px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+}
+
+.admin-donut strong {
+  color: #111827;
+  font-size: 1.7rem;
+  line-height: 1;
+  font-weight: 950;
+}
+
+.admin-donut span {
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.admin-donut-legend {
+  display: grid;
+  gap: 8px;
+  max-height: 150px;
+  overflow: auto;
+}
+
+.admin-donut-legend div {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  color: #334155;
+  font-size: 0.8rem;
+  font-weight: 900;
+}
+
+.admin-donut-legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.admin-donut-legend span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-donut-legend b {
+  color: #111827;
+}
+
+.admin-radar-layout {
+  height: 188px;
+  display: grid;
+  grid-template-columns: 164px minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+}
+
+.admin-radar-layout svg {
+  width: 164px;
+  height: 164px;
+}
+
+.radar-grid {
+  fill: none;
+  stroke: #e2e8f0;
+  stroke-width: 1;
+}
+
+.radar-axis {
+  stroke: #e2e8f0;
+  stroke-width: 1;
+}
+
+.radar-area {
+  fill-opacity: 0.22;
+  stroke-width: 2.5;
+}
+
+.radar-point {
+  stroke: #fff;
+  stroke-width: 1.5;
+}
+
+.admin-radar-legend {
+  max-height: 158px;
+  display: grid;
+  gap: 6px;
+  overflow: auto;
+}
+
+.admin-radar-legend div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.76rem;
+  font-weight: 900;
+}
+
+.admin-radar-legend span {
+  min-width: 0;
+  overflow: hidden;
+  color: #475569;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-radar-legend b {
+  color: #111827;
+}
+
 .admin-wide-chart {
   margin-top: 10px;
 }
 
 .admin-column-chart {
-  height: 150px;
+  height: 170px;
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
   align-items: end;
@@ -558,7 +709,27 @@ button:disabled {
 }
 
 .admin-activity-table .col-child {
-  width: 150px;
+  width: auto;
+}
+
+.admin-activity-table {
+  table-layout: auto;
+  min-width: max-content;
+}
+
+.admin-activity-table th,
+.admin-activity-table td,
+.admin-activity-table .col-child,
+.admin-activity-table .col-date,
+.admin-activity-table .col-category,
+.admin-activity-table .col-answer,
+.admin-activity-table .col-status,
+.admin-activity-table .col-help {
+  width: auto;
+}
+
+.admin-activity-table .col-problem {
+  min-width: 360px;
 }
 
 .admin-layout > .activity-panel,
@@ -2472,6 +2643,29 @@ li:nth-child(3) .rank-num { color: #b45309; }
 
   .admin-summary-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-donut-layout {
+    grid-template-columns: 130px minmax(0, 1fr);
+  }
+
+  .admin-donut {
+    width: 130px;
+    height: 130px;
+  }
+
+  .admin-donut > div {
+    width: 80px;
+    height: 80px;
+  }
+
+  .admin-radar-layout {
+    grid-template-columns: 140px minmax(0, 1fr);
+  }
+
+  .admin-radar-layout svg {
+    width: 140px;
+    height: 140px;
   }
 
   .admin-layout > .activity-panel,
