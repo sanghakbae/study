@@ -1220,6 +1220,34 @@ button:disabled {
   line-height: 1;
 }
 
+@media (min-width: 901px) {
+  .skill-stage {
+    gap: 5px;
+  }
+
+  .skill-node {
+    min-height: 37px;
+    padding: 4px 5px;
+  }
+
+  .skill-link {
+    height: 8px;
+  }
+
+  .skill-icon {
+    font-size: 1.06rem;
+  }
+
+  .skill-node strong {
+    font-size: 0.78rem;
+  }
+
+  .skill-node em,
+  .skill-node small {
+    font-size: 0.65rem;
+  }
+}
+
 @media (max-width: 900px) {
   .skill-board {
     grid-template-columns: repeat(6, minmax(80px, 1fr));
@@ -1293,6 +1321,58 @@ button:disabled {
   top: 0; left: 0; right: 0;
   height: 2px;
   background: linear-gradient(90deg, #38bdf8, #818cf8);
+}
+
+.my-rank-card {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.my-rank-card strong {
+  display: block;
+  overflow: hidden;
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 950;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.my-rank-card small {
+  color: #94a3b8;
+  font-size: 0.66rem;
+  font-weight: 850;
+}
+
+.my-rank-card b {
+  color: #5eead4;
+  font-size: 1.08rem;
+  font-weight: 950;
+}
+
+.leader-divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 8px;
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 950;
+}
+
+.leader-divider::before,
+.leader-divider::after {
+  content: "";
+  height: 1px;
+  flex: 1;
+  background: #e2e8f0;
 }
 
 .my-stats-row {
@@ -1452,9 +1532,9 @@ button:disabled {
 }
 
 .leader-list li.me {
-  background: linear-gradient(135deg, #f0fdff, #ecfeff) !important;
-  border-color: rgba(6, 182, 212, 0.35) !important;
-  box-shadow: 0 0 0 2px rgba(6,182,212,0.12);
+  background: linear-gradient(135deg, #f8fafc, #f0fdfa) !important;
+  border-color: #ccfbf1 !important;
+  box-shadow: none;
 }
 
 .leader-avatar {

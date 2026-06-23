@@ -160,6 +160,17 @@ export async function updateUserRole({ uid, role, parentOf = [], displayName, gr
   });
 }
 
+export async function completeGuideWizard(uid) {
+  await setDoc(
+    doc(db, "users", uid),
+    {
+      guideWizardSeen: true,
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true },
+  );
+}
+
 export async function completeOnboarding({ user, role, grade }) {
   await setDoc(
     doc(db, "users", user.uid),

@@ -36,6 +36,7 @@ import { onAuthStateChanged, signInWithPopup, signOut } from "firebase/auth";
 import { auth, googleProvider } from "./firebase";
 import {
   completeOnboarding,
+  completeGuideWizard,
   ensureUserProfile,
   loadAiUsageLogsForUsers,
   loadAttemptsForUsers,
@@ -360,7 +361,7 @@ export default function App() {
     const problem = problemOverride;
     setSaving(true);
 
-    const alreadySolved = (solvedBySkill[selectedSkillId] || []).includes(problem.id);
+    const alreadySolved = (solvedBySkill[problem.nodeId] || []).includes(problem.id);
     const hints = getGuidePenaltyCount(problem.id);
     const helpUsed = Array.isArray(hintUsed[problem.id]) ? hintUsed[problem.id] : [];
     const xpMultiplier = Math.max(0.3, 1 - hints * 0.05);
@@ -939,7 +940,8 @@ function SkillTree({ skills, selectedSkillId, completedSkills, solvedBySkill, un
 }
 
 function Leaderboard({ leaders, currentUid, profile, showMyStats = true }) {
-  const myRank = leaders.findIndex((l) => l.uid === currentUid) + 1;
+  const displayLeaders = buildPreviewLeaderboard(leaders, currentUid, profile);
+  const myRank = displayLeaders.findIndex((l) => l.uid === currentUid) + 1;
   const xp = profile?.xp || 0;
   const solved = profile?.solvedCount || 0;
   const level = Math.floor(xp / 200) + 1;
@@ -954,6 +956,20 @@ function Leaderboard({ leaders, currentUid, profile, showMyStats = true }) {
 
       {showMyStats && (
         <div className="my-stats-card">
+          <div className="my-rank-card">
+            {profile?.photoURL ? (
+              <div className="leader-avatar">
+                <img src={profile.photoURL} alt="" referrerPolicy="no-referrer" />
+              </div>
+            ) : (
+              <div className="leader-avatar placeholder"><UserRound size={16} /></div>
+            )}
+            <div>
+              <strong>{formatStudentName(profile)}</strong>
+              <small>내 순위</small>
+            </div>
+            <b>{myRank > 0 ? `#${myRank}` : "-"}</b>
+          </div>
           <div className="my-stats-row">
             <div className="my-stat">
               <span>{xp.toLocaleString()}</span>
@@ -974,14 +990,18 @@ function Leaderboard({ leaders, currentUid, profile, showMyStats = true }) {
         </div>
       )}
 
+      {showMyStats && <div className="leader-divider">전체 순위</div>}
+
       <ol className="leader-list">
-        {leaders.length ? leaders.slice(0, 6).map((leader, index) => (
+        {displayLeaders.length ? displayLeaders.slice(0, 5).map((leader, index) => (
           <li key={leader.uid} className={leader.uid === currentUid ? "me" : ""}>
             <span className="rank-num">{index < 3 ? <Medal size={14} /> : index + 1}</span>
-            {leader.photoURL && (
+            {leader.photoURL ? (
               <div className="leader-avatar">
                 <img src={leader.photoURL} alt="" referrerPolicy="no-referrer" />
               </div>
+            ) : (
+              <div className="leader-avatar placeholder"><UserRound size={15} /></div>
             )}
             <div>
               <strong>{formatStudentName(leader)}</strong>
@@ -992,6 +1012,23 @@ function Leaderboard({ leaders, currentUid, profile, showMyStats = true }) {
       </ol>
     </section>
   );
+}
+
+function buildPreviewLeaderboard(leaders, currentUid, profile) {
+  const me = {
+    uid: currentUid,
+    displayName: profile?.displayName || "나",
+    grade: profile?.grade || "중1",
+    xp: profile?.xp || 0,
+    photoURL: profile?.photoURL || "",
+  };
+  return [
+    { uid: "preview-rank-01", displayName: "김민준", grade: "중2", xp: Math.max((me.xp || 0) + 620, 3380) },
+    { uid: "preview-rank-02", displayName: "이서연", grade: "중1", xp: Math.max((me.xp || 0) + 420, 3180) },
+    { uid: "preview-rank-03", displayName: "박지호", grade: "중3", xp: Math.max((me.xp || 0) + 210, 2970) },
+    me,
+    { uid: "preview-rank-05", displayName: "최유나", grade: "중1", xp: Math.max((me.xp || 0) - 180, 2420) },
+  ];
 }
 
 function formatStudentName(member) {
