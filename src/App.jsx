@@ -75,16 +75,42 @@ const guideActions = [
 
 const gradeOptions = ["중1", "중2", "중3", "고1", "고2", "고3"];
 const problemLookup = new Map(generatedProblems.map((problem) => [problem.id, problem]));
+const defaultSkillId = "m1-numbers";
+const defaultProblemId = "p-m1-numbers-01";
+
+function getLastLocationKey(uid) {
+  return uid ? `study-last-location-${uid}` : "study-last-location";
+}
+
+function readLastStudyLocation(uid) {
+  try {
+    const raw = localStorage.getItem(getLastLocationKey(uid)) || localStorage.getItem(getLastLocationKey());
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeLastStudyLocation({ uid, skillId, problemId }) {
+  if (!skillId || !problemId) return;
+  const value = JSON.stringify({ skillId, problemId });
+  localStorage.setItem(getLastLocationKey(), value);
+  if (uid) localStorage.setItem(getLastLocationKey(uid), value);
+}
 
 export default function App() {
   const isManagerPath = window.location.pathname === "/manager";
+  const initialLocation = readLastStudyLocation();
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(fallbackUser);
   const [authReady, setAuthReady] = useState(false);
   const [skills, setSkills] = useState(curriculumNodes);
-  const [selectedSkillId, setSelectedSkillId] = useState("m1-numbers");
-  const [problems, setProblems] = useState(getProblemsForSkill(curriculumNodes[0]));
-  const [selectedProblemId, setSelectedProblemId] = useState("p-m1-numbers-01");
+  const [selectedSkillId, setSelectedSkillId] = useState(initialLocation.skillId || defaultSkillId);
+  const [problems, setProblems] = useState(() => {
+    const skill = curriculumNodes.find((item) => item.id === (initialLocation.skillId || defaultSkillId)) || curriculumNodes[0];
+    return getProblemsForSkill(skill);
+  });
+  const [selectedProblemId, setSelectedProblemId] = useState(initialLocation.problemId || defaultProblemId);
   const [leaderboard, setLeaderboard] = useState([]);
   const [members, setMembers] = useState([]);
   const [activityAttempts, setActivityAttempts] = useState([]);
@@ -131,6 +157,9 @@ export default function App() {
       setUser(nextUser);
       setAuthReady(true);
       if (nextUser) {
+        const savedLocation = readLastStudyLocation(nextUser.uid);
+        if (savedLocation.skillId) setSelectedSkillId(savedLocation.skillId);
+        if (savedLocation.problemId) setSelectedProblemId(savedLocation.problemId);
         setProfile({
           uid: nextUser.uid,
           displayName: nextUser.displayName || "수학 러너",
@@ -166,18 +195,33 @@ export default function App() {
     loadProblemsBySkill(selectedSkillId)
       .then((items) => {
         const nextProblems = items.length >= 50 ? items : getFallbackProblems(skill);
+        const savedLocation = readLastStudyLocation(user.uid);
+        const savedProblemId = savedLocation.skillId === selectedSkillId ? savedLocation.problemId : "";
+        const nextProblemId = nextProblems.some((problem) => problem.id === savedProblemId)
+          ? savedProblemId
+          : nextProblems[0]?.id || "";
         setProblems(nextProblems);
-        setSelectedProblemId(nextProblems[0]?.id || "");
+        setSelectedProblemId(nextProblemId);
         setGuide("새 문제를 열었습니다. 풀이를 쓰고 필요한 순간에 가이드를 요청하세요.");
       })
       .catch((error) => {
         console.error(error);
         const nextProblems = getFallbackProblems(skill);
+        const savedLocation = readLastStudyLocation(user.uid);
+        const savedProblemId = savedLocation.skillId === selectedSkillId ? savedLocation.problemId : "";
+        const nextProblemId = nextProblems.some((problem) => problem.id === savedProblemId)
+          ? savedProblemId
+          : nextProblems[0]?.id || "";
         setProblems(nextProblems);
-        setSelectedProblemId(nextProblems[0]?.id || "");
+        setSelectedProblemId(nextProblemId);
         setDataWarning("");
       });
   }, [selectedSkillId, user]);
+
+  useEffect(() => {
+    if (!user || !selectedSkillId || !selectedProblemId) return;
+    writeLastStudyLocation({ uid: user.uid, skillId: selectedSkillId, problemId: selectedProblemId });
+  }, [selectedSkillId, selectedProblemId, user]);
 
   async function refreshCatalog() {
     const uid = auth.currentUser?.uid;
