@@ -32,7 +32,7 @@ import {
   Users,
   Wand2,
 } from "lucide-react";
-import { getRedirectResult, onAuthStateChanged, signInWithRedirect, signOut } from "firebase/auth";
+import { onAuthStateChanged, signInWithPopup, signOut } from "firebase/auth";
 import { auth, googleProvider } from "./firebase";
 import {
   completeOnboarding,
@@ -77,7 +77,6 @@ const gradeOptions = ["중1", "중2", "중3", "고1", "고2", "고3"];
 const problemLookup = new Map(generatedProblems.map((problem) => [problem.id, problem]));
 const defaultSkillId = "m1-numbers";
 const defaultProblemId = "p-m1-numbers-01";
-const pendingRoleKey = "study-pending-login-role";
 
 function getLastLocationKey(uid) {
   return uid ? `study-last-location-${uid}` : "study-last-location";
@@ -118,7 +117,7 @@ export default function App() {
   const [aiUsageLogs, setAiUsageLogs] = useState([]);
   const [guide, setGuide] = useState("문제를 고르고 노트에 풀이를 시작하세요. 막히는 순간 오른쪽 버튼으로 힌트를 받을 수 있습니다.");
   const [guideLoading, setGuideLoading] = useState(false);
-  const [pendingRole, setPendingRole] = useState(() => sessionStorage.getItem(pendingRoleKey));
+  const [pendingRole, setPendingRole] = useState(null);
   const [saving, setSaving] = useState(false);
   const [answerChecks, setAnswerChecks] = useState({});
   const [hintUsed, setHintUsed] = useState({});
@@ -154,23 +153,10 @@ export default function App() {
 
   useEffect(() => {
     localStorage.removeItem("study-note-ratio");
-    const authReadyTimeout = window.setTimeout(() => {
-      setAuthReady(true);
-      setDataWarning("Google 로그인 상태 확인이 지연되어 로그인 화면으로 돌아왔습니다. 다시 로그인해주세요.");
-    }, 4000);
-    getRedirectResult(auth)
-      .catch((error) => {
-        console.error(error);
-        sessionStorage.removeItem(pendingRoleKey);
-        setPendingRole(null);
-        setDataWarning(`Google 로그인 리다이렉트 확인 필요: ${error.message}`);
-      });
-    const unsubscribe = onAuthStateChanged(auth, async (nextUser) => {
-      window.clearTimeout(authReadyTimeout);
+    return onAuthStateChanged(auth, async (nextUser) => {
       setUser(nextUser);
       setAuthReady(true);
       if (nextUser) {
-        setPendingRole(sessionStorage.getItem(pendingRoleKey));
         const savedLocation = readLastStudyLocation(nextUser.uid);
         if (savedLocation.skillId) setSelectedSkillId(savedLocation.skillId);
         if (savedLocation.problemId) setSelectedProblemId(savedLocation.problemId);
@@ -197,10 +183,6 @@ export default function App() {
         }
       }
     });
-    return () => {
-      window.clearTimeout(authReadyTimeout);
-      unsubscribe();
-    };
   }, []);
 
   useEffect(() => {
@@ -292,13 +274,13 @@ export default function App() {
 
   async function handleLogin(role) {
     setPendingRole(role);
-    sessionStorage.setItem(pendingRoleKey, role);
     try {
-      await signInWithRedirect(auth, googleProvider);
+      await signInWithPopup(auth, googleProvider);
     } catch (error) {
-      sessionStorage.removeItem(pendingRoleKey);
       setPendingRole(null);
-      if (error.code !== "auth/popup-closed-by-user") {
+      if (error.code === "auth/popup-blocked") {
+        alert("팝업이 차단됐습니다.\n브라우저 주소창 오른쪽의 팝업 허용 아이콘을 클릭한 뒤 다시 시도해주세요.");
+      } else if (error.code !== "auth/popup-closed-by-user") {
         alert(`Google 로그인 실패: ${error.message}`);
       }
     }
@@ -314,8 +296,6 @@ export default function App() {
       onboardingComplete: true,
     };
     await completeOnboarding({ user, role, grade });
-    sessionStorage.removeItem(pendingRoleKey);
-    setPendingRole(null);
     setProfile(nextProfile);
     await refreshCatalog();
     await refreshMembers(nextProfile);
@@ -535,9 +515,7 @@ export default function App() {
   }
 
   if (!user) {
-    return isManagerPath
-      ? <ManagerLoginScreen onLogin={() => handleLogin("admin")} warning={dataWarning} />
-      : <LoginScreen onLogin={handleLogin} warning={dataWarning} />;
+    return isManagerPath ? <ManagerLoginScreen onLogin={() => handleLogin("admin")} /> : <LoginScreen onLogin={handleLogin} />;
   }
 
   if (isManagerPath && profile.role !== "admin") {
@@ -808,7 +786,7 @@ function getFallbackProblems(skill) {
   return getProblemsForSkill(skill);
 }
 
-function LoginScreen({ onLogin, warning }) {
+function LoginScreen({ onLogin }) {
   return (
     <main className="login-screen">
       <div className="login-art">
@@ -818,7 +796,6 @@ function LoginScreen({ onLogin, warning }) {
           </div>
           <h1>Study Math Arena</h1>
           <p>교과 흐름을 따라 스킬을 열고, 풀이 노트와 AI 튜터로 경쟁하는 수학 학습장.</p>
-          {warning && <div className="warning-bar">{warning}</div>}
           <div className="role-grid">
             <button onClick={() => onLogin("student")}>
               <strong>학생</strong>
@@ -835,7 +812,7 @@ function LoginScreen({ onLogin, warning }) {
   );
 }
 
-function ManagerLoginScreen({ onLogin, warning }) {
+function ManagerLoginScreen({ onLogin }) {
   return (
     <main className="login-screen">
       <div className="login-art">
@@ -845,7 +822,6 @@ function ManagerLoginScreen({ onLogin, warning }) {
           </div>
           <h1>관리자 페이지 접속</h1>
           <p className="manager-warning">관리자만 접속이 가능합니다.</p>
-          {warning && <div className="warning-bar">{warning}</div>}
           <button className="google-button manager-google-button" onClick={onLogin}>
             <UserRound size={16} />
             Google 로그인
