@@ -705,11 +705,11 @@ function ManagerLoginScreen({ onLogin }) {
           <div className="brand-mark large">
             <ShieldCheck size={34} />
           </div>
-          <h1>관리자 로그인</h1>
-          <p>관리자 계정으로 로그인하면 회원 관리와 학습 활동을 확인할 수 있습니다.</p>
+          <h1>관리자 페이지 접속</h1>
+          <p className="manager-warning">관리자만 접속이 가능합니다.</p>
           <button className="google-button manager-google-button" onClick={onLogin}>
             <UserRound size={16} />
-            Google로 관리자 로그인
+            Google 로그인
           </button>
         </div>
       </div>
@@ -725,10 +725,10 @@ function ManagerAccessDenied({ user }) {
           <div className="brand-mark large">
             <ShieldCheck size={34} />
           </div>
-          <h1>접근 권한 없음</h1>
-          <p>{user.email} 계정은 관리자 권한이 없습니다.</p>
+          <h1>관리자 페이지 접속</h1>
+          <p className="manager-warning">관리자만 접속이 가능합니다.</p>
           <button className="google-button manager-google-button" onClick={() => signOut(auth)}>
-            다른 Google 계정으로 로그인
+            Google 로그인
           </button>
         </div>
       </div>
@@ -1052,7 +1052,7 @@ function MemberManager({ members, onRoleUpdate }) {
                   </td>
                   <td>
                     <button
-                      style={{ fontSize: "0.7rem", padding: "2px 6px", background: "#c0392b", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer" }}
+                      className="member-reset-button"
                       onClick={async () => {
                         if (!window.confirm(`${member.displayName || member.email} 의 XP와 풀이 기록을 모두 초기화합니까?`)) return;
                         await saveMember(member, { xp: 0, solvedCount: 0, resetProgress: true });
