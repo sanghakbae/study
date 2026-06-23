@@ -457,6 +457,14 @@ button:disabled {
   text-decoration: none;
 }
 
+.problem-admin-actions {
+  flex: 1;
+}
+
+.problem-admin-actions .admin-search-box {
+  min-width: 320px;
+}
+
 .admin-dashboard-actions a.disabled {
   pointer-events: none;
   opacity: 0.45;
@@ -817,6 +825,101 @@ button:disabled {
 
 .admin-activity-table .col-problem {
   min-width: 360px;
+}
+
+.problem-admin-table-wrap {
+  margin-top: 10px;
+  max-height: calc(100vh - 270px);
+}
+
+.problem-admin-note {
+  margin: 8px 0 0;
+  color: #64748b;
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
+.problem-admin-table {
+  table-layout: auto;
+  min-width: 1500px;
+}
+
+.problem-admin-table th,
+.problem-admin-table td {
+  height: auto;
+  vertical-align: top;
+  white-space: normal;
+  font-size: 10px;
+}
+
+.problem-admin-table .col-category {
+  min-width: 78px;
+  width: 78px;
+  max-width: 78px;
+}
+
+.problem-admin-table .col-status {
+  min-width: 70px;
+}
+
+.problem-admin-table .col-problem-no {
+  min-width: 42px;
+  width: 42px;
+  max-width: 42px;
+  text-align: center;
+}
+
+.problem-admin-table .col-difficulty {
+  min-width: 54px;
+  width: 54px;
+  max-width: 54px;
+  text-align: center;
+}
+
+.problem-admin-table .col-answer {
+  min-width: 120px;
+}
+
+.problem-admin-table .col-problem {
+  min-width: 260px;
+}
+
+.problem-cell-input {
+  width: 100%;
+  min-height: 54px;
+  resize: vertical;
+  border: 1px solid #cbd5e1;
+  border-radius: 5px;
+  background: #fff;
+  color: #111827;
+  padding: 2px 4px;
+  font-size: 10px;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
+.problem-cell-input.answer,
+.problem-cell-input.small {
+  min-height: 0;
+  height: 32px;
+  resize: none;
+  text-align: center;
+}
+
+.problem-save-button {
+  height: 32px;
+  min-width: 56px;
+  border-radius: 5px;
+  background: #111827;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.problem-save-button:disabled {
+  background: #e2e8f0;
+  color: #94a3b8;
+  cursor: not-allowed;
 }
 
 .admin-layout > .activity-panel,
@@ -1789,7 +1892,7 @@ li:nth-child(3) .rank-num { color: #b45309; }
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 
 .child-avatar {
@@ -1804,10 +1907,10 @@ li:nth-child(3) .rank-num { color: #b45309; }
 }
 
 .child-name-block {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
+  display: grid;
+  gap: 2px;
   min-width: 0;
+  flex: 1;
 }
 
 .child-name-block strong {
@@ -1819,6 +1922,46 @@ li:nth-child(3) .rank-num { color: #b45309; }
   font-size: 0.75rem;
   color: #64748b;
   white-space: nowrap;
+}
+
+.child-position {
+  display: grid;
+  justify-items: end;
+  gap: 1px;
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.child-position strong {
+  color: #0f766e;
+  font-size: 0.94rem;
+  font-weight: 900;
+}
+
+.child-position small {
+  color: #94a3b8;
+  font-size: 0.64rem;
+  font-weight: 800;
+}
+
+.child-rank-context {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 8px 46px;
+}
+
+.child-rank-context span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  color: #475569;
+  font-size: 0.68rem;
+  font-weight: 800;
 }
 
 .child-stats {

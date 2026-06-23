@@ -17,14 +17,6 @@ import { db } from "../firebase";
 import { curriculumNodes } from "../data/curriculum";
 import { generatedProblems } from "../data/problemBank";
 
-const mockRankingUsers = [
-  { uid: "mock-student-01", displayName: "김민준", grade: "중1", role: "student", xp: 1240, solvedCount: 38 },
-  { uid: "mock-student-02", displayName: "이서연", grade: "중2", role: "student", xp: 1120, solvedCount: 34 },
-  { uid: "mock-student-03", displayName: "박지호", grade: "중3", role: "student", xp: 980, solvedCount: 30 },
-  { uid: "mock-student-04", displayName: "최하린", grade: "고1", role: "student", xp: 860, solvedCount: 26 },
-  { uid: "mock-student-05", displayName: "정도윤", grade: "고2", role: "student", xp: 760, solvedCount: 22 },
-];
-
 export async function ensureUserProfile(user) {
   const ref = doc(db, "users", user.uid);
   const snap = await getDoc(ref);
@@ -58,31 +50,15 @@ export async function ensureUserProfile(user) {
 export async function seedCatalogIfNeeded() {
   const markerRef = doc(db, "system", "catalog");
   const marker = await getDoc(markerRef);
-  if (marker.exists() && marker.data()?.version >= 5) return;
+  if (marker.exists() && marker.data()?.version >= 6) return;
 
   await Promise.all([
     ...curriculumNodes.map((node) => setDoc(doc(db, "skills", node.id), node)),
     ...generatedProblems.map((problem) => setDoc(doc(db, "problems", problem.id), problem)),
-    ...mockRankingUsers.map((student) =>
-      setDoc(
-        doc(db, "users", student.uid),
-        {
-          ...student,
-          email: `${student.uid}@mock.study`,
-          photoURL: "",
-          parentOf: [],
-          masteredSkills: [],
-          isMock: true,
-          createdAt: serverTimestamp(),
-          lastSeenAt: serverTimestamp(),
-        },
-        { merge: true },
-      ),
-    ),
     setDoc(markerRef, {
       seededAt: serverTimestamp(),
-      version: 5,
-      note: "Expanded catalog with generated problems, static guidance, and editable mock ranking students.",
+      version: 6,
+      note: "Expanded catalog with generated problems and static guidance.",
     }),
   ]);
 }
@@ -96,6 +72,23 @@ export async function loadProblemsBySkill(nodeId) {
   const q = query(collection(db, "problems"), where("nodeId", "==", nodeId), limit(50));
   const snap = await getDocs(q);
   return snap.docs.map((item) => item.data());
+}
+
+export async function loadAllProblems() {
+  const snap = await getDocs(collection(db, "problems"));
+  return snap.docs.map((item) => ({ id: item.id, ...item.data() }));
+}
+
+export async function upsertProblem(problem) {
+  await setDoc(
+    doc(db, "problems", problem.id),
+    {
+      ...problem,
+      difficulty: Number(problem.difficulty) || 1,
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true },
+  );
 }
 
 export async function loadLeaderboard() {
@@ -129,6 +122,18 @@ export async function loadProgressForUser(uid) {
     result[data.nodeId] = Array.from(solved);
   });
   return result;
+}
+
+export async function loadProgressForUsers(userIds) {
+  if (!userIds.length) return [];
+  const uniqueUserIds = Array.from(new Set(userIds.filter(Boolean)));
+  const results = [];
+  for (const uid of uniqueUserIds) {
+    const q = query(collection(db, "progress"), where("uid", "==", uid));
+    const snap = await getDocs(q);
+    results.push(...snap.docs.map((item) => ({ id: item.id, ...item.data() })));
+  }
+  return results;
 }
 
 export async function loadUsers() {
@@ -191,13 +196,10 @@ export async function completeOnboarding({ user, role, grade }) {
 
 export async function loadAttemptsForUsers(userIds) {
   if (!userIds.length) return [];
-  const chunks = [];
-  for (let index = 0; index < userIds.length; index += 10) {
-    chunks.push(userIds.slice(index, index + 10));
-  }
+  const uniqueUserIds = Array.from(new Set(userIds.filter(Boolean)));
   const results = [];
-  for (const chunk of chunks) {
-    const q = query(collection(db, "attempts"), where("uid", "in", chunk), limit(300));
+  for (const uid of uniqueUserIds) {
+    const q = query(collection(db, "attempts"), where("uid", "==", uid), limit(300));
     const snap = await getDocs(q);
     results.push(...snap.docs.map((item) => ({ id: item.id, ...item.data() })));
   }

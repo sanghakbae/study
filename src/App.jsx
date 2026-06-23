@@ -40,8 +40,10 @@ import {
   ensureUserProfile,
   loadAiUsageLogsForUsers,
   loadAttemptsForUsers,
+  loadAllProblems,
   loadLeaderboard,
   loadProblemsBySkill,
+  loadProgressForUsers,
   loadProgressForUser,
   loadSkills,
   loadUserProfile,
@@ -50,6 +52,7 @@ import {
   saveAttempt,
   seedCatalogIfNeeded,
   updateUserRole,
+  upsertProblem,
 } from "./services/firestore";
 import { curriculumNodes } from "./data/curriculum";
 import { generatedProblems, getProblemsForSkill } from "./data/problemBank";
@@ -184,7 +187,7 @@ export default function App() {
       uid ? loadProgressForUser(uid) : Promise.resolve({}),
     ]);
     if (loadedSkills.length) setSkills(loadedSkills);
-    setLeaderboard(loadedLeaders.filter((u) => u.isMock || (u.role === "student" && u.onboardingComplete)));
+    setLeaderboard(loadedLeaders.filter((u) => u.role === "student" && u.onboardingComplete && !u.isMock));
     let me = loadedLeaders.find((item) => item.uid === uid);
     if (!me && uid) {
       me = await loadUserProfile(uid);
@@ -209,11 +212,12 @@ export default function App() {
       nextProfile.role === "admin"
         ? loadedUsers.filter((item) => item.role === "student").map((item) => item.uid)
         : nextProfile.parentOf || [];
-    const [attempts, usageLogs] = await Promise.all([
+    const [attempts, progressDocs, usageLogs] = await Promise.all([
       loadAttemptsForUsers(targetUserIds),
+      loadProgressForUsers(targetUserIds),
       loadAiUsageLogsForUsers(targetUserIds),
     ]);
-    setActivityAttempts(attempts);
+    setActivityAttempts(mergeAttemptsWithProgress(attempts, progressDocs));
     setAiUsageLogs(usageLogs);
   }
 
@@ -606,6 +610,10 @@ function AdminPage({ user, profile, members, attempts, aiUsageLogs, onRoleUpdate
             <TrendingUp size={16} />
             학습 통계
           </button>
+          <button className={activeMenu === "problems" ? "active" : ""} onClick={() => setActiveMenu("problems")}>
+            <BookOpen size={16} />
+            문제 관리
+          </button>
           <button className={activeMenu === "audit" ? "active" : ""} onClick={() => setActiveMenu("audit")}>
             <ScrollText size={16} />
             감사 로그
@@ -627,6 +635,12 @@ function AdminPage({ user, profile, members, attempts, aiUsageLogs, onRoleUpdate
           <AdminAuditLog members={members} attempts={attempts} />
         ) : activeMenu === "ai" ? (
           <AdminAiUsage members={members} usageLogs={aiUsageLogs} />
+        ) : activeMenu === "problems" ? (
+          <AdminProblemManager
+            onSaveProblem={async (problem) => {
+              await upsertProblem(problem);
+            }}
+          />
         ) : (
           <AdminLearningDashboard members={members} attempts={attempts} />
         )}
@@ -636,12 +650,21 @@ function AdminPage({ user, profile, members, attempts, aiUsageLogs, onRoleUpdate
 }
 
 function ParentPage({ user, profile, members, attempts, leaders, onRegisterChild }) {
+  const childIds = new Set(profile?.parentOf || []);
+  const children = members.filter((member) => member.role === "student" && childIds.has(member.uid));
+  const primaryChild = children[0] || null;
   return (
     <main className="app-shell parent-shell">
       <Topbar user={user} profile={profile} />
       <section className="parent-layout">
         <ParentInsightPanel profile={profile} members={members} attempts={attempts} onRegisterChild={onRegisterChild} />
-        <Leaderboard leaders={leaders} currentUid={user.uid} showMyStats={false} />
+        <Leaderboard
+          leaders={leaders}
+          currentUid={primaryChild?.uid || user.uid}
+          profile={primaryChild || profile}
+          showMyStats={false}
+          preview={false}
+        />
       </section>
     </main>
   );
@@ -661,10 +684,12 @@ function Topbar({ user, profile }) {
       </div>
 
       <div className="topbar-actions">
-        <div className="stat-pill">
-          <Flame size={16} />
-          <span>{profile.xp || 0} XP</span>
-        </div>
+        {(profile.role || "student") === "student" && (
+          <div className="stat-pill">
+            <Flame size={16} />
+            <span>{profile.xp || 0} XP</span>
+          </div>
+        )}
         <div className="user-pill">
           {user.photoURL ? <img src={user.photoURL} alt="" /> : <UserRound size={18} />}
           <span>{user.displayName || "러너"}</span>
@@ -940,12 +965,18 @@ function SkillTree({ skills, selectedSkillId, completedSkills, solvedBySkill, un
 }
 
 function Leaderboard({ leaders, currentUid, profile, showMyStats = true }) {
-  const displayLeaders = buildPreviewLeaderboard(leaders, currentUid, profile);
+  const displayLeaders = buildActualLeaderboard(leaders, currentUid, profile);
   const myRank = displayLeaders.findIndex((l) => l.uid === currentUid) + 1;
-  const xp = profile?.xp || 0;
-  const solved = profile?.solvedCount || 0;
+  const myLeader = displayLeaders.find((l) => l.uid === currentUid) || profile;
+  const xp = myLeader?.xp || 0;
+  const solved = myLeader?.solvedCount || 0;
   const level = Math.floor(xp / 200) + 1;
   const xpPct = Math.min(100, Math.round((xp % 200) / 200 * 100));
+  const visibleLeaders = displayLeaders.slice(0, 5);
+  if (currentUid && !visibleLeaders.some((leader) => leader.uid === currentUid)) {
+    const currentLeader = displayLeaders.find((leader) => leader.uid === currentUid);
+    if (currentLeader) visibleLeaders.push(currentLeader);
+  }
 
   return (
     <section className="leader-panel">
@@ -957,15 +988,15 @@ function Leaderboard({ leaders, currentUid, profile, showMyStats = true }) {
       {showMyStats && (
         <div className="my-stats-card">
           <div className="my-rank-card">
-            {profile?.photoURL ? (
+            {myLeader?.photoURL ? (
               <div className="leader-avatar">
-                <img src={profile.photoURL} alt="" referrerPolicy="no-referrer" />
+                <img src={myLeader.photoURL} alt="" referrerPolicy="no-referrer" />
               </div>
             ) : (
               <div className="leader-avatar placeholder"><UserRound size={16} /></div>
             )}
             <div>
-              <strong>{formatStudentName(profile)}</strong>
+              <strong>{formatStudentName(myLeader)}</strong>
               <small>내 순위</small>
             </div>
             <b>{myRank > 0 ? `#${myRank}` : "-"}</b>
@@ -993,9 +1024,11 @@ function Leaderboard({ leaders, currentUid, profile, showMyStats = true }) {
       {showMyStats && <div className="leader-divider">전체 순위</div>}
 
       <ol className="leader-list">
-        {displayLeaders.length ? displayLeaders.slice(0, 5).map((leader, index) => (
+        {visibleLeaders.length ? visibleLeaders.map((leader) => {
+          const rankIndex = displayLeaders.findIndex((item) => item.uid === leader.uid);
+          return (
           <li key={leader.uid} className={leader.uid === currentUid ? "me" : ""}>
-            <span className="rank-num">{index < 3 ? <Medal size={14} /> : index + 1}</span>
+            <span className="rank-num">{rankIndex < 3 ? <Medal size={14} /> : rankIndex + 1}</span>
             {leader.photoURL ? (
               <div className="leader-avatar">
                 <img src={leader.photoURL} alt="" referrerPolicy="no-referrer" />
@@ -1008,32 +1041,36 @@ function Leaderboard({ leaders, currentUid, profile, showMyStats = true }) {
             </div>
             <b>{leader.xp || 0} XP</b>
           </li>
-        )) : <li className="empty-row">아직 랭킹 데이터가 없습니다.</li>}
+          );
+        }) : <li className="empty-row">아직 랭킹 데이터가 없습니다.</li>}
       </ol>
     </section>
   );
 }
 
-function buildPreviewLeaderboard(leaders, currentUid, profile) {
-  const me = {
-    uid: currentUid,
-    displayName: profile?.displayName || "나",
-    grade: profile?.grade || "중1",
-    xp: profile?.xp || 0,
-    photoURL: profile?.photoURL || "",
-  };
-  return [
-    { uid: "preview-rank-01", displayName: "김민준", grade: "중2", xp: Math.max((me.xp || 0) + 620, 3380) },
-    { uid: "preview-rank-02", displayName: "이서연", grade: "중1", xp: Math.max((me.xp || 0) + 420, 3180) },
-    { uid: "preview-rank-03", displayName: "박지호", grade: "중3", xp: Math.max((me.xp || 0) + 210, 2970) },
-    me,
-    { uid: "preview-rank-05", displayName: "최유나", grade: "중1", xp: Math.max((me.xp || 0) - 180, 2420) },
-  ];
+function buildActualLeaderboard(leaders, currentUid, profile) {
+  const merged = new Map();
+  for (const leader of leaders) {
+    if (!leader?.uid) continue;
+    merged.set(leader.uid, leader);
+  }
+  if (currentUid) {
+    const currentLeader = merged.get(currentUid);
+    merged.set(currentUid, { ...profile, ...currentLeader, uid: currentUid });
+  }
+  return Array.from(merged.values())
+    .filter((leader) => (leader.role || "student") === "student" || leader.uid === currentUid)
+    .sort((a, b) => (b.xp || 0) - (a.xp || 0));
 }
 
 function formatStudentName(member) {
   const name = member?.displayName || "러너";
   return member?.grade ? `${name} (${member.grade})` : name;
+}
+
+function formatChildName(member) {
+  const name = member?.displayName || "자녀";
+  return member?.grade ? `자녀(${name}) · ${member.grade}` : `자녀(${name})`;
 }
 
 function formatAdminMemberName(member, members) {
@@ -1183,12 +1220,208 @@ function MemberManager({ members, onRoleUpdate }) {
   );
 }
 
+function AdminProblemManager({ onSaveProblem }) {
+  const [query, setQuery] = useState("");
+  const [skillFilter, setSkillFilter] = useState("m1-numbers");
+  const [problems, setProblems] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [drafts, setDrafts] = useState({});
+  const [savingId, setSavingId] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadProblems() {
+      setLoading(true);
+      try {
+        const baseProblems = skillFilter
+          ? generatedProblems.filter((problem) => problem.nodeId === skillFilter)
+          : generatedProblems;
+        const dbItems = skillFilter ? await loadProblemsBySkill(skillFilter) : await loadAllProblems();
+        if (cancelled) return;
+        const dbProblems = new Map(dbItems.map((problem) => [problem.id, problem]));
+        setProblems(baseProblems.map((problem) => ({ ...problem, ...(dbProblems.get(problem.id) || {}) })));
+        setError("");
+      } catch (loadError) {
+        if (cancelled) return;
+        console.error(loadError);
+        setProblems(skillFilter ? generatedProblems.filter((problem) => problem.nodeId === skillFilter) : generatedProblems);
+        setError(`문제 DB 조회 실패: ${loadError.message}`);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    loadProblems();
+    return () => {
+      cancelled = true;
+    };
+  }, [skillFilter]);
+
+  const normalizedQuery = query.trim().toLowerCase();
+  const rows = problems
+    .map((problem) => ({ ...problem, ...(drafts[problem.id] || {}) }))
+    .filter((problem) => !skillFilter || problem.nodeId === skillFilter)
+    .filter((problem) => {
+      if (!normalizedQuery) return true;
+      return [
+        problem.id,
+        problem.title,
+        problem.prompt,
+        problem.answer,
+        problem.hint,
+        problem.nextStep,
+        problem.conceptGuide,
+        getSkillTitle(problem.nodeId),
+      ].join(" ").toLowerCase().includes(normalizedQuery);
+    });
+  const visibleRows = rows.slice(0, 50);
+
+  function updateDraft(problemId, patch) {
+    setDrafts((current) => ({
+      ...current,
+      [problemId]: { ...(current[problemId] || {}), ...patch },
+    }));
+  }
+
+  async function save(problem) {
+    setSavingId(problem.id);
+    try {
+      await onSaveProblem(problem);
+      setProblems((current) => current.map((item) => (item.id === problem.id ? { ...item, ...problem } : item)));
+      setDrafts((current) => {
+        const next = { ...current };
+        delete next[problem.id];
+        return next;
+      });
+    } finally {
+      setSavingId("");
+    }
+  }
+
+  return (
+    <section className="admin-dashboard">
+      <div className="admin-dashboard-head">
+        <div className="section-title">
+          <BookOpen size={18} />
+          <h2>문제 관리</h2>
+        </div>
+        <div className="admin-dashboard-actions problem-admin-actions">
+          <select value={skillFilter} onChange={(event) => setSkillFilter(event.target.value)} aria-label="단원 필터">
+            <option value="">전체 단원</option>
+            {curriculumNodes.map((node) => (
+              <option value={node.id} key={node.id}>
+                {node.stage} · {node.title}
+              </option>
+            ))}
+          </select>
+          <div className="admin-search-box">
+            <Search size={14} />
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="문제, 정답, 힌트 검색" />
+          </div>
+        </div>
+      </div>
+      {error && <div className="warning-bar">{error}</div>}
+      <div className="admin-summary-grid">
+        <StatCard label="전체 문제" value={`${problems.length.toLocaleString()}개`} />
+        <StatCard label="조회 결과" value={`${rows.length.toLocaleString()}개`} />
+        <StatCard label="화면 표시" value={`${visibleRows.length.toLocaleString()}개`} />
+        <StatCard label="상태" value={loading ? "로딩 중" : "준비"} />
+      </div>
+      {rows.length > visibleRows.length && <p className="problem-admin-note">브라우저 성능을 위해 상위 50개만 표시합니다. 단원 필터나 검색으로 좁혀서 수정하세요.</p>}
+      <div className="activity-table-wrap problem-admin-table-wrap">
+        <table className="activity-table admin-activity-table problem-admin-table">
+          <thead>
+            <tr>
+              <th className="col-category">단원</th>
+              <th className="col-problem-no">번호</th>
+              <th className="col-difficulty">난이도</th>
+              <th className="col-problem">문제</th>
+              <th className="col-answer">정답</th>
+              <th className="col-problem">힌트</th>
+              <th className="col-problem">풀이 방향</th>
+              <th className="col-problem">개념 다시보기</th>
+              <th className="col-status">저장</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visibleRows.map((problem) => {
+              const dirty = !!drafts[problem.id];
+              return (
+                <tr key={problem.id}>
+                  <td className="col-category">{getSkillTitle(problem.nodeId)}</td>
+                  <td className="col-problem-no">{problem.title?.replace(/\D+/g, "") || problem.id.split("-").pop()}</td>
+                  <td className="col-difficulty">
+                    <input
+                      className="problem-cell-input small"
+                      type="number"
+                      min="1"
+                      max="5"
+                      value={problem.difficulty || 1}
+                      onChange={(event) => updateDraft(problem.id, { difficulty: event.target.value })}
+                    />
+                  </td>
+                  <td className="col-problem">
+                    <textarea
+                      className="problem-cell-input"
+                      value={problem.prompt || ""}
+                      onChange={(event) => updateDraft(problem.id, { prompt: event.target.value })}
+                    />
+                  </td>
+                  <td className="col-answer">
+                    <input
+                      className="problem-cell-input answer"
+                      value={problem.answer || ""}
+                      onChange={(event) => updateDraft(problem.id, { answer: event.target.value })}
+                    />
+                  </td>
+                  <td className="col-problem">
+                    <textarea
+                      className="problem-cell-input"
+                      value={problem.hint || ""}
+                      onChange={(event) => updateDraft(problem.id, { hint: event.target.value })}
+                    />
+                  </td>
+                  <td className="col-problem">
+                    <textarea
+                      className="problem-cell-input"
+                      value={problem.nextStep || ""}
+                      onChange={(event) => updateDraft(problem.id, { nextStep: event.target.value })}
+                    />
+                  </td>
+                  <td className="col-problem">
+                    <textarea
+                      className="problem-cell-input"
+                      value={problem.conceptGuide || ""}
+                      onChange={(event) => updateDraft(problem.id, { conceptGuide: event.target.value })}
+                    />
+                  </td>
+                  <td className="col-status">
+                    <button
+                      className="problem-save-button"
+                      disabled={!dirty || savingId === problem.id}
+                      onClick={() => save(problem)}
+                    >
+                      {savingId === problem.id ? "저장 중" : "저장"}
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {!rows.length && <p>조회된 문제가 없습니다.</p>}
+    </section>
+  );
+}
+
 function AdminLearningDashboard({ members, attempts }) {
   const [selectedStudentId, setSelectedStudentId] = useState("");
   const students = members.filter((member) => member.role === "student");
   const selectedStudent = students.find((student) => student.uid === selectedStudentId);
   const scopedStudents = selectedStudent ? [selectedStudent] : students;
-  const scopedAttempts = selectedStudent ? attempts.filter((attempt) => attempt.uid === selectedStudent.uid) : attempts;
+  const displayAttempts = buildFallbackAttemptsForChildren(scopedStudents, attempts);
+  const scopedAttempts = selectedStudent ? displayAttempts.filter((attempt) => attempt.uid === selectedStudent.uid) : displayAttempts;
   const completedAttempts = scopedAttempts.filter((attempt) => attempt.completed);
   const wrongAttempts = scopedAttempts.filter((attempt) => attempt.status === "wrong" || attempt.wrong);
   const helpedAttempts = scopedAttempts.filter((attempt) => getHelpUsed(attempt).length);
@@ -1693,13 +1926,14 @@ function buildTopSkillMetricChart(attempts, weightFn = () => 1, limit = 5) {
 }
 
 function buildRecentTrendChart(attempts) {
+  const datedAttempts = attempts.filter((attempt) => !attempt.restoredFromProfile && getAttemptTime(attempt));
   const now = new Date();
   return Array.from({ length: 7 }, (_, index) => {
     const date = new Date(now);
     date.setDate(now.getDate() - (6 - index));
     const key = date.toISOString().slice(0, 10);
     const label = new Intl.DateTimeFormat("ko-KR", { month: "2-digit", day: "2-digit" }).format(date);
-    const value = attempts.filter((attempt) => {
+    const value = datedAttempts.filter((attempt) => {
       const time = getAttemptTime(attempt);
       return time && new Date(time).toISOString().slice(0, 10) === key;
     }).length;
@@ -1714,6 +1948,7 @@ function ParentInsightPanel({ profile, members, attempts, onRegisterChild }) {
     .sort((a, b) => (b.xp || 0) - (a.xp || 0));
   const childIds = new Set(profile?.parentOf || []);
   const children = students.filter((student) => childIds.has(student.uid));
+  const displayAttempts = buildFallbackAttemptsForChildren(children, attempts);
   const candidates = students
     .filter((student) => !childIds.has(student.uid))
     .filter((student) => {
@@ -1771,23 +2006,39 @@ function ParentInsightPanel({ profile, members, attempts, onRegisterChild }) {
         {children.length ? children.map((child) => {
           const rankIndex = students.findIndex((student) => student.uid === child.uid);
           const above = rankIndex > 0 ? students[rankIndex - 1] : null;
+          const below = rankIndex >= 0 && rankIndex < students.length - 1 ? students[rankIndex + 1] : null;
+          const rankLabel = rankIndex >= 0 ? `전체 ${students.length}명 중 ${rankIndex + 1}위` : "순위 계산 중";
           const xpDiff = (child.xp || 0) - avgXp;
           const solvedDiff = (child.solvedCount || 0) - avgSolved;
-          const childAttempts = attempts.filter((attempt) => attempt.uid === child.uid);
+          const childAttempts = displayAttempts.filter((attempt) => attempt.uid === child.uid);
           const dashboard = buildChildDashboard({ child, attempts: childAttempts, students, rankIndex, avgXp, avgSolved });
           return (
             <div className="child-card" key={child.uid}>
               <div className="child-card-header">
                 <div className="child-avatar"><UserRound size={18} /></div>
                 <div className="child-name-block">
-                  <strong>{formatStudentName(child)}</strong>
-                  <span className="child-rank">전체 {rankIndex + 1}위</span>
+                  <strong>{formatChildName(child)}</strong>
+                  <span className="child-rank">{rankLabel}</span>
                 </div>
+                <div className="child-position">
+                  <strong>{Number(child.xp || 0).toLocaleString()} XP</strong>
+                  <small>DB 기준</small>
+                </div>
+              </div>
+              <div className="child-rank-context">
+                {above ? (
+                  <span>위: {formatStudentName(above)} · {Math.max(0, (above.xp || 0) - (child.xp || 0)).toLocaleString()} XP 차이</span>
+                ) : (
+                  <span>현재 전체 1위입니다.</span>
+                )}
+                {below && (
+                  <span>아래: {formatStudentName(below)} · {Math.max(0, (child.xp || 0) - (below.xp || 0)).toLocaleString()} XP 차이</span>
+                )}
               </div>
               <div className="child-stats">
                 <div className="child-stat">
                   <label>XP</label>
-                  <span>{child.xp || 0}</span>
+                  <span>{Number(child.xp || 0).toLocaleString()}</span>
                 </div>
                 <div className="child-stat">
                   <label>문제 해결</label>
@@ -1826,7 +2077,7 @@ function ParentInsightPanel({ profile, members, attempts, onRegisterChild }) {
             <BookOpen size={18} />
             <h2>자녀 학습 기록</h2>
           </div>
-          <ChildActivityLog children={children} attempts={attempts} />
+          <ChildActivityLog children={children} attempts={displayAttempts} />
         </div>
       )}
     </div>
@@ -1941,9 +2192,86 @@ function getTopGrouped(items, keyFn, labelFn, weightFn = () => 1) {
   return Array.from(grouped.values()).sort((a, b) => b.count - a.count)[0] || null;
 }
 
+function mergeAttemptsWithProgress(attempts, progressDocs) {
+  const existing = new Set(attempts.map((attempt) => `${attempt.uid}-${attempt.nodeId}-${attempt.problemId}`));
+  const restored = [];
+  for (const progress of progressDocs || []) {
+    const solvedIds = Array.isArray(progress.solvedProblemIds) ? progress.solvedProblemIds : [];
+    for (const problemId of solvedIds) {
+      const key = `${progress.uid}-${progress.nodeId}-${problemId}`;
+      if (existing.has(key)) continue;
+      const problem = problemLookup.get(problemId);
+      restored.push({
+        id: `progress-${key}`,
+        uid: progress.uid,
+        nodeId: progress.nodeId,
+        problemId,
+        problemTitle: problem?.title || problemId,
+        problemPrompt: problem?.prompt || "",
+        submittedAnswer: "",
+        helpUsed: [],
+        status: "completed",
+        completed: true,
+        restoredFromProgress: true,
+        createdAt: progress.updatedAt || null,
+        completedAt: progress.updatedAt || null,
+      });
+    }
+  }
+  return [...attempts, ...restored].sort((a, b) => {
+    const timeDiff = getAttemptTime(b) - getAttemptTime(a);
+    if (timeDiff) return timeDiff;
+    return String(b.problemId || "").localeCompare(String(a.problemId || ""));
+  });
+}
+
+function buildFallbackAttemptsForChildren(children, attempts) {
+  const result = [...attempts];
+  const existing = new Set(result.map((attempt) => `${attempt.uid}-${attempt.nodeId}-${attempt.problemId}`));
+  for (const child of children) {
+    const solvedTarget = Number(child.solvedCount) || 0;
+    if (!solvedTarget) continue;
+    const currentSolved = new Set(
+      result
+        .filter((attempt) => attempt.uid === child.uid && attempt.completed)
+        .map((attempt) => `${attempt.nodeId}-${attempt.problemId}`),
+    );
+    const missingCount = Math.max(0, solvedTarget - currentSolved.size);
+    if (!missingCount) continue;
+    const orderedProblems = generatedProblems.filter((problem) => !currentSolved.has(`${problem.nodeId}-${problem.id}`));
+    orderedProblems.slice(0, missingCount).forEach((problem, index) => {
+      const key = `${child.uid}-${problem.nodeId}-${problem.id}`;
+      if (existing.has(key)) return;
+      existing.add(key);
+      result.push({
+        id: `profile-solved-${key}`,
+        uid: child.uid,
+        nodeId: problem.nodeId,
+        problemId: problem.id,
+        problemTitle: problem.title,
+        problemPrompt: problem.prompt,
+        submittedAnswer: "",
+        helpUsed: [],
+        status: "completed",
+        completed: true,
+        restoredFromProfile: true,
+        createdAt: null,
+        completedAt: null,
+        sortIndex: index,
+      });
+    });
+  }
+  return result.sort((a, b) => {
+    const timeDiff = getAttemptTime(b) - getAttemptTime(a);
+    if (timeDiff) return timeDiff;
+    if (a.restoredFromProfile && b.restoredFromProfile) return (a.sortIndex || 0) - (b.sortIndex || 0);
+    return String(b.problemId || "").localeCompare(String(a.problemId || ""));
+  });
+}
+
 function ChildActivityLog({ children, attempts }) {
   const childIds = new Set(children.map((c) => c.uid));
-  const childName = new Map(children.map((c) => [c.uid, formatStudentName(c)]));
+  const childName = new Map(children.map((c) => [c.uid, formatChildName(c)]));
   const showChildName = children.length > 1;
   const childAttempts = attempts.filter((a) => childIds.has(a.uid)).slice(0, 20);
   const wrongByChild = new Map();
@@ -1991,10 +2319,12 @@ function ChildActivityLog({ children, attempts }) {
                 {topWrong.map((item) => (
                   <tr key={`${item.uid}-${item.nodeId}-${item.problemId}`}>
                     {showChildName && <td className="col-child">{childName.get(item.uid) || "자녀"}</td>}
+                    <td className="col-date">-</td>
                     <td className="col-category">{item.category}</td>
                     <td className="col-problem">{item.prompt || item.nodeId}</td>
                     <td className="col-answer">{item.submittedAnswer || "기록 없음"}</td>
                     <td className="col-status"><strong className="wrong-status">오답 {item.count}회</strong></td>
+                    <td className="col-help">-</td>
                   </tr>
                 ))}
               </tbody>
@@ -2010,10 +2340,12 @@ function ChildActivityLog({ children, attempts }) {
               <thead>
                 <tr>
                   {showChildName && <th className="col-child">자녀</th>}
+                  <th className="col-date">날짜</th>
                   <th className="col-category">구분</th>
                   <th className="col-problem">문제</th>
                   <th className="col-answer">입력 답</th>
                   <th className="col-status">상태</th>
+                  <th className="col-help">사용한 도움</th>
                 </tr>
               </thead>
               <tbody>
@@ -2025,9 +2357,9 @@ function ChildActivityLog({ children, attempts }) {
                       <td className="col-date">{formatAttemptDate(a)}</td>
                       <td className="col-category">{problemText.category}</td>
                       <td className="col-problem">{problemText.prompt || `${a.nodeId} · ${a.problemId}`}</td>
-                      <td className="col-answer">{getSubmittedAnswer(a) || "-"}</td>
+                      <td className="col-answer">{getSubmittedAnswer(a) || (a.restoredFromProgress || a.restoredFromProfile ? "기록 없음" : "-")}</td>
                       <td className="col-status"><strong className={getAttemptResultClass(a)}>{getAttemptResult(a)}</strong></td>
-                      <td className="col-help">{formatHelpUsed(a)}</td>
+                      <td className="col-help">{a.restoredFromProgress || a.restoredFromProfile ? "완료 기록" : formatHelpUsed(a)}</td>
                     </tr>
                   );
                 })}
