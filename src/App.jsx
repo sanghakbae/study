@@ -36,7 +36,6 @@ import { onAuthStateChanged, signInWithPopup, signOut } from "firebase/auth";
 import { auth, googleProvider } from "./firebase";
 import {
   completeOnboarding,
-  completeGuideWizard,
   ensureUserProfile,
   loadAiUsageLogsForUsers,
   loadAttemptsForUsers,
@@ -48,10 +47,13 @@ import {
   loadSkills,
   loadUserProfile,
   loadUsers,
+  markAiGuideUsed,
   saveAiUsageLog,
   saveAttempt,
   seedCatalogIfNeeded,
+  suppressLoginGuideForSevenDays,
   updateUserRole,
+  updateStudyLocation,
   upsertProblem,
 } from "./services/firestore";
 import { curriculumNodes } from "./data/curriculum";
@@ -78,29 +80,6 @@ const problemLookup = new Map(generatedProblems.map((problem) => [problem.id, pr
 const defaultSkillId = "m1-numbers";
 const defaultProblemId = "p-m1-numbers-01";
 
-function getLastLocationKey(uid) {
-  return uid ? `study-last-location-${uid}` : "study-last-location";
-}
-
-function getSolvedBySkillKey(uid) {
-  return uid ? `study-solved-by-skill-${uid}` : "study-solved-by-skill";
-}
-
-function readLastStudyLocation(uid) {
-  try {
-    const raw = localStorage.getItem(getLastLocationKey(uid));
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
-  }
-}
-
-function writeLastStudyLocation({ uid, skillId, problemId }) {
-  if (!skillId || !problemId) return;
-  const value = JSON.stringify({ skillId, problemId });
-  localStorage.setItem(getLastLocationKey(uid), value);
-}
-
 function getProblemOrder(problem) {
   const match = String(problem.id || "").match(/-(\d+)$/);
   return match ? Number(match[1]) : Number.MAX_SAFE_INTEGER;
@@ -117,28 +96,18 @@ function chooseProblemId({ problems, savedLocation, skillId }) {
   return problems[0]?.id || "";
 }
 
-function readSolvedBySkill(uid) {
-  try {
-    const raw = localStorage.getItem(getSolvedBySkillKey(uid));
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
-  }
-}
-
 export default function App() {
   const isManagerPath = window.location.pathname === "/manager";
-  const initialLocation = readLastStudyLocation();
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(fallbackUser);
   const [authReady, setAuthReady] = useState(false);
   const [skills, setSkills] = useState(curriculumNodes);
-  const [selectedSkillId, setSelectedSkillId] = useState(initialLocation.skillId || defaultSkillId);
+  const [selectedSkillId, setSelectedSkillId] = useState(defaultSkillId);
   const [problems, setProblems] = useState(() => {
-    const skill = curriculumNodes.find((item) => item.id === (initialLocation.skillId || defaultSkillId)) || curriculumNodes[0];
+    const skill = curriculumNodes.find((item) => item.id === defaultSkillId) || curriculumNodes[0];
     return getProblemsForSkill(skill);
   });
-  const [selectedProblemId, setSelectedProblemId] = useState(initialLocation.problemId || defaultProblemId);
+  const [selectedProblemId, setSelectedProblemId] = useState(defaultProblemId);
   const [leaderboard, setLeaderboard] = useState([]);
   const [members, setMembers] = useState([]);
   const [activityAttempts, setActivityAttempts] = useState([]);
@@ -149,17 +118,14 @@ export default function App() {
   const [saving, setSaving] = useState(false);
   const [answerChecks, setAnswerChecks] = useState({});
   const [hintUsed, setHintUsed] = useState({});
-  const [reviewCounts, setReviewCounts] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem("study-review-counts") || "{}");
-    } catch {
-      return {};
-    }
-  });
+  const [reviewCounts, setReviewCounts] = useState({});
   const [solvedBySkill, setSolvedBySkill] = useState({});
   const [tool, setTool] = useState("pen");
   const [dataWarning, setDataWarning] = useState("");
   const [noteRatio, setNoteRatio] = useState(68);
+  const [mobileSkillOpen, setMobileSkillOpen] = useState(true);
+  const [showLoginGuide, setShowLoginGuide] = useState(false);
+  const [guideSuppressChecked, setGuideSuppressChecked] = useState(false);
   const notebookRef = useRef(null);
   const workspaceRef = useRef(null);
 
@@ -176,13 +142,9 @@ export default function App() {
   useEffect(() => {
     localStorage.removeItem("study-note-ratio");
     return onAuthStateChanged(auth, async (nextUser) => {
+      setAuthReady(false);
       setUser(nextUser);
-      setAuthReady(true);
       if (nextUser) {
-        const savedLocation = readLastStudyLocation(nextUser.uid);
-        setSolvedBySkill(readSolvedBySkill(nextUser.uid));
-        setSelectedSkillId(savedLocation.skillId || defaultSkillId);
-        setSelectedProblemId(savedLocation.problemId || defaultProblemId);
         setProfile({
           uid: nextUser.uid,
           displayName: nextUser.displayName || "수학 러너",
@@ -195,6 +157,8 @@ export default function App() {
         try {
           const nextProfile = await ensureUserProfile(nextUser);
           setProfile((current) => ({ ...current, ...nextProfile }));
+          setSelectedSkillId(nextProfile.lastSkillId || defaultSkillId);
+          setSelectedProblemId(nextProfile.lastProblemId || defaultProblemId);
           if (nextUser.email === "totoriverce@gmail.com") {
             await seedCatalogIfNeeded();
           }
@@ -207,12 +171,13 @@ export default function App() {
       } else {
         setSolvedBySkill({});
       }
+      setAuthReady(true);
     });
   }, []);
 
   useEffect(() => {
-    localStorage.setItem("study-review-counts", JSON.stringify(reviewCounts));
-  }, [reviewCounts]);
+    setReviewCounts(profile.aiGuideReviewCounts || {});
+  }, [profile.aiGuideReviewCounts]);
 
   useEffect(() => {
     if (!user) return;
@@ -220,7 +185,7 @@ export default function App() {
     loadProblemsBySkill(selectedSkillId)
       .then((items) => {
         const nextProblems = sortProblemsByNumber(items.length >= 50 ? items : getFallbackProblems(skill));
-        const savedLocation = readLastStudyLocation(user.uid);
+        const savedLocation = { skillId: profile.lastSkillId, problemId: profile.lastProblemId };
         const nextProblemId = chooseProblemId({ problems: nextProblems, savedLocation, skillId: selectedSkillId });
         setProblems(nextProblems);
         setSelectedProblemId(nextProblemId);
@@ -229,18 +194,32 @@ export default function App() {
       .catch((error) => {
         console.error(error);
         const nextProblems = sortProblemsByNumber(getFallbackProblems(skill));
-        const savedLocation = readLastStudyLocation(user.uid);
+        const savedLocation = { skillId: profile.lastSkillId, problemId: profile.lastProblemId };
         const nextProblemId = chooseProblemId({ problems: nextProblems, savedLocation, skillId: selectedSkillId });
         setProblems(nextProblems);
         setSelectedProblemId(nextProblemId);
         setDataWarning("");
       });
-  }, [selectedSkillId, user]);
+  }, [selectedSkillId, user, profile.lastSkillId, profile.lastProblemId]);
 
   useEffect(() => {
-    if (!user || !selectedSkillId || !selectedProblemId) return;
-    writeLastStudyLocation({ uid: user.uid, skillId: selectedSkillId, problemId: selectedProblemId });
-  }, [selectedSkillId, selectedProblemId, user]);
+    if (!authReady || !user || !selectedSkillId || !selectedProblemId) return;
+    updateStudyLocation({ uid: user.uid, skillId: selectedSkillId, problemId: selectedProblemId }).catch((error) => {
+      console.error(error);
+      setDataWarning(`최근 학습 위치 저장 실패: ${error.message}`);
+    });
+  }, [authReady, selectedSkillId, selectedProblemId, user]);
+
+  useEffect(() => {
+    const shouldShowGuide =
+      authReady &&
+      user &&
+      (profile.role || "student") === "student" &&
+      profile.onboardingComplete &&
+      Number(profile.loginGuideDismissUntil || 0) <= Date.now();
+    setShowLoginGuide(Boolean(shouldShowGuide));
+    if (shouldShowGuide) setGuideSuppressChecked(false);
+  }, [authReady, user, profile.role, profile.onboardingComplete, profile.loginGuideDismissUntil]);
 
   async function refreshCatalog() {
     const uid = auth.currentUser?.uid;
@@ -318,6 +297,19 @@ export default function App() {
     await refreshMembers(nextProfile);
   }
 
+  async function handleDismissLoginGuide() {
+    if (guideSuppressChecked && user) {
+      try {
+        await suppressLoginGuideForSevenDays(user.uid);
+        setProfile((current) => ({ ...current, loginGuideDismissUntil: Date.now() + 7 * 24 * 60 * 60 * 1000 }));
+      } catch (error) {
+        console.error(error);
+        setDataWarning(`가이드 숨김 저장 실패: ${error.message}`);
+      }
+    }
+    setShowLoginGuide(false);
+  }
+
   function getGuidePenaltyCount(problemId) {
     const used = hintUsed[problemId];
     if (Array.isArray(used)) return used.length;
@@ -367,6 +359,10 @@ export default function App() {
     }
 
     setReviewCounts((current) => ({ ...current, [reviewKey]: 1 }));
+    markAiGuideUsed({ uid: user.uid, problemId: reviewKey }).catch((error) => {
+      console.error(error);
+      setDataWarning(`AI 가이드 사용 기록 저장 실패: ${error.message}`);
+    });
     setGuideLoading(true);
     setGuide(`${action.label} 요청 중...`);
     try {
@@ -519,11 +515,6 @@ export default function App() {
     );
   }, [skills, completedSkills]);
 
-  useEffect(() => {
-    if (!user) return;
-    localStorage.setItem(getSolvedBySkillKey(user.uid), JSON.stringify(solvedBySkill));
-  }, [solvedBySkill, user]);
-
   if (!authReady) {
     return (
       <main className="loading-screen">
@@ -585,10 +576,20 @@ export default function App() {
     );
   }
 
+  const topbarLeaders = buildActualLeaderboard(leaderboard, user.uid, profile);
+  const topbarRank = topbarLeaders.findIndex((leader) => leader.uid === user.uid) + 1;
+
   return (
     <main className="app-shell">
       {dataWarning && <div className="warning-bar">{dataWarning}</div>}
-      <Topbar user={user} profile={profile} />
+      <Topbar user={user} profile={profile} rank={topbarRank || 0} />
+      {showLoginGuide && (
+        <LoginGuideModal
+          suppressChecked={guideSuppressChecked}
+          onSuppressChange={setGuideSuppressChecked}
+          onClose={handleDismissLoginGuide}
+        />
+      )}
 
       <section className="dashboard-strip">
         <SkillTree
@@ -598,8 +599,10 @@ export default function App() {
           solvedBySkill={solvedBySkill}
           unlockedSkills={unlockedSkills}
           onSelect={setSelectedSkillId}
+          mobileCollapsed={!mobileSkillOpen}
+          onMobileToggle={() => setMobileSkillOpen((open) => !open)}
         />
-        <Leaderboard leaders={leaderboard} currentUid={user.uid} profile={profile} />
+        <Leaderboard className="dashboard-rank" leaders={leaderboard} currentUid={user.uid} profile={profile} />
       </section>
 
       <section
@@ -732,7 +735,7 @@ function ParentPage({ user, profile, members, attempts, leaders, onRegisterChild
   );
 }
 
-function Topbar({ user, profile }) {
+function Topbar({ user, profile, rank = 0 }) {
   return (
     <header className="topbar">
       <div className="brand-block">
@@ -746,6 +749,12 @@ function Topbar({ user, profile }) {
       </div>
 
       <div className="topbar-actions">
+        {(profile.role || "student") === "student" && (
+          <div className="stat-pill rank-pill">
+            <Crown size={16} />
+            <span>{rank > 0 ? `#${rank}` : "-"}</span>
+          </div>
+        )}
         {(profile.role || "student") === "student" && (
           <div className="stat-pill">
             <Flame size={16} />
@@ -761,6 +770,113 @@ function Topbar({ user, profile }) {
         </button>
       </div>
     </header>
+  );
+}
+
+function LoginGuideModal({ suppressChecked, onSuppressChange, onClose }) {
+  return (
+    <div className="login-guide-backdrop" role="dialog" aria-modal="true" aria-labelledby="login-guide-title">
+      <div className="login-guide-modal">
+        <div className="login-guide-head">
+          <div>
+            <span>처음 시작 가이드</span>
+            <h2 id="login-guide-title">이렇게 풀면 돼요</h2>
+          </div>
+          <button type="button" onClick={onClose} aria-label="가이드 닫기">X</button>
+        </div>
+
+        <div className="login-guide-steps">
+          <GuideStep
+            type="skill"
+            title="1. 스킬을 고르기"
+            body="위의 스킬트리에서 오늘 풀 단원을 확인해요. 처음이면 정수와 유리수 1번부터 시작해요."
+          />
+          <GuideStep
+            type="solve"
+            title="2. 문제를 풀기"
+            body="문제를 읽고 답을 골라요. 풀이 버튼을 누르면 계산 노트와 답 버튼이 보여요."
+          />
+          <GuideStep
+            type="helper"
+            title="3. 막히면 도움 받기"
+            body="풀이 방향, 힌트, 개념 다시보기를 눌러요. 도움을 쓰면 받을 XP가 조금 줄어요."
+          />
+        </div>
+
+        <label className="login-guide-check">
+          <input
+            type="checkbox"
+            checked={suppressChecked}
+            onChange={(event) => onSuppressChange(event.target.checked)}
+          />
+          <span>7일간 다시 띄우지 않음</span>
+        </label>
+
+        <button className="login-guide-start" type="button" onClick={onClose}>
+          시작하기
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function GuideStep({ type, title, body }) {
+  return (
+    <article className="login-guide-step">
+      <GuidePicture type={type} />
+      <div>
+        <h3>{title}</h3>
+        <p>{body}</p>
+      </div>
+    </article>
+  );
+}
+
+function GuidePicture({ type }) {
+  if (type === "skill") {
+    return (
+      <svg className="login-guide-picture" viewBox="0 0 160 100" role="img" aria-label="스킬트리 그림">
+        <rect width="160" height="100" rx="8" fill="#0f172a" />
+        <rect x="12" y="12" width="38" height="12" rx="3" fill="#22c55e" />
+        <rect x="61" y="12" width="38" height="12" rx="3" fill="#6366f1" />
+        <rect x="110" y="12" width="38" height="12" rx="3" fill="#f59e0b" />
+        <rect x="12" y="34" width="38" height="12" rx="3" fill="#164e63" />
+        <rect x="61" y="34" width="38" height="12" rx="3" fill="#312e81" />
+        <rect x="110" y="34" width="38" height="12" rx="3" fill="#7c2d12" />
+        <path d="M31 24v10M80 24v10M129 24v10" stroke="#e5e7eb" strokeWidth="2" strokeLinecap="round" />
+        <circle cx="31" cy="70" r="14" fill="#14b8a6" />
+        <path d="M24 70l5 5 9-11" stroke="#fff" strokeWidth="4" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    );
+  }
+
+  if (type === "solve") {
+    return (
+      <svg className="login-guide-picture" viewBox="0 0 160 100" role="img" aria-label="문제 풀이 그림">
+        <rect width="160" height="100" rx="8" fill="#f8fafc" />
+        <rect x="12" y="12" width="136" height="30" rx="5" fill="#111827" />
+        <text x="22" y="31" fill="#fff" fontSize="13" fontWeight="800">(-3)+2-(-2)=?</text>
+        {[0, 1, 2, 3, 4].map((item) => (
+          <rect key={item} x={12 + item * 28} y="54" width="22" height="22" rx="5" fill={item === 2 ? "#14b8a6" : "#e2e8f0"} />
+        ))}
+        <text x="73" y="70" fill="#fff" fontSize="10" fontWeight="900">3</text>
+      </svg>
+    );
+  }
+
+  return (
+    <svg className="login-guide-picture" viewBox="0 0 160 100" role="img" aria-label="풀이 도우미 그림">
+      <rect width="160" height="100" rx="8" fill="#eef2ff" />
+      <rect x="12" y="12" width="64" height="24" rx="5" fill="#ffffff" />
+      <rect x="84" y="12" width="64" height="24" rx="5" fill="#ffffff" />
+      <rect x="12" y="44" width="64" height="24" rx="5" fill="#ffffff" />
+      <rect x="84" y="44" width="64" height="24" rx="5" fill="#ffffff" />
+      <circle cx="29" cy="24" r="7" fill="#6366f1" />
+      <circle cx="101" cy="24" r="7" fill="#14b8a6" />
+      <circle cx="29" cy="56" r="7" fill="#f59e0b" />
+      <circle cx="101" cy="56" r="7" fill="#ec4899" />
+      <path d="M28 83c24-12 52-12 82 0" stroke="#111827" strokeWidth="5" strokeLinecap="round" fill="none" />
+    </svg>
   );
 }
 
@@ -973,7 +1089,8 @@ const skillIcons = {
   "h-statistics": "μ",
 };
 
-function SkillTree({ skills, selectedSkillId, completedSkills, solvedBySkill, unlockedSkills, onSelect }) {
+function SkillTree({ skills, selectedSkillId, completedSkills, solvedBySkill, unlockedSkills, onSelect, mobileCollapsed = false, onMobileToggle }) {
+  const boardRef = useRef(null);
   const stageOrder = ["중1", "중2", "중3", "고1", "고2", "고3"];
   const groupedSkills = stageOrder.map((stage) => ({
     stage,
@@ -981,14 +1098,49 @@ function SkillTree({ skills, selectedSkillId, completedSkills, solvedBySkill, un
       .filter((skill) => skill.stage === stage)
       .sort((a, b) => (a.lane ?? 0) - (b.lane ?? 0) || (a.level ?? 0) - (b.level ?? 0)),
   }));
+  const maxStageSkillCount = Math.max(...groupedSkills.map((group) => group.skills.length), 1);
+
+  useEffect(() => {
+    const board = boardRef.current;
+    if (!board) return undefined;
+
+    const updateSkillScale = () => {
+      const styles = window.getComputedStyle(board);
+      const paddingY = parseFloat(styles.paddingTop) + parseFloat(styles.paddingBottom);
+      const headerHeight = 22;
+      const stageGap = 5;
+      const availableHeight = board.clientHeight - paddingY - headerHeight - stageGap;
+      const linkCount = Math.max(0, maxStageSkillCount - 1);
+      const idealLinkHeight = linkCount ? Math.min(8, Math.max(1, Math.floor(availableHeight * 0.1 / linkCount))) : 0;
+      const nodeHeight = Math.floor((availableHeight - idealLinkHeight * linkCount) / maxStageSkillCount);
+      const compactHeight = Math.max(18, Math.min(37, nodeHeight));
+      const compactRatio = (compactHeight - 18) / 19;
+
+      board.style.setProperty("--skill-node-height", `${compactHeight}px`);
+      board.style.setProperty("--skill-link-height", `${idealLinkHeight}px`);
+      board.style.setProperty("--skill-node-font-size", `${0.48 + compactRatio * 0.3}rem`);
+      board.style.setProperty("--skill-icon-font-size", `${0.66 + compactRatio * 0.4}rem`);
+      board.classList.toggle("skill-board-compact", compactHeight < 32);
+    };
+
+    updateSkillScale();
+    const observer = new ResizeObserver(updateSkillScale);
+    observer.observe(board);
+    return () => observer.disconnect();
+  }, [maxStageSkillCount]);
 
   return (
-    <section className="skill-panel">
+    <section className={`skill-panel ${mobileCollapsed ? "mobile-collapsed" : ""}`}>
       <div className="section-title">
-        <Award size={18} />
-        <h2>스킬 트리</h2>
+        <div className="section-title-label">
+          <Award size={18} />
+          <h2>스킬 트리</h2>
+        </div>
+        <button className="mobile-skill-toggle" type="button" onClick={onMobileToggle}>
+          {mobileCollapsed ? "펼치기" : "접기"}
+        </button>
       </div>
-      <div className="skill-board">
+      <div className="skill-board" ref={boardRef}>
         {groupedSkills.map((group) => {
           const stageClass = { "중1":"s-m1","중2":"s-m2","중3":"s-m3","고1":"s-h1","고2":"s-h2","고3":"s-h3" }[group.stage] || "";
           return (
@@ -1026,7 +1178,7 @@ function SkillTree({ skills, selectedSkillId, completedSkills, solvedBySkill, un
   );
 }
 
-function Leaderboard({ leaders, currentUid, profile, showMyStats = true }) {
+function Leaderboard({ leaders, currentUid, profile, showMyStats = true, className = "" }) {
   const displayLeaders = buildActualLeaderboard(leaders, currentUid, profile);
   const myRank = displayLeaders.findIndex((l) => l.uid === currentUid) + 1;
   const myLeader = displayLeaders.find((l) => l.uid === currentUid) || profile;
@@ -1041,7 +1193,7 @@ function Leaderboard({ leaders, currentUid, profile, showMyStats = true }) {
   }
 
   return (
-    <section className="leader-panel">
+    <section className={`leader-panel ${className}`}>
       <div className="section-title">
         <Crown size={18} />
         <h2>랭킹</h2>
@@ -1049,30 +1201,9 @@ function Leaderboard({ leaders, currentUid, profile, showMyStats = true }) {
 
       {showMyStats && (
         <div className="my-stats-card">
-          <div className="my-rank-card">
-            {myLeader?.photoURL ? (
-              <div className="leader-avatar">
-                <img src={myLeader.photoURL} alt="" referrerPolicy="no-referrer" />
-              </div>
-            ) : (
-              <div className="leader-avatar placeholder"><UserRound size={16} /></div>
-            )}
-            <div>
-              <strong>{formatStudentName(myLeader)}</strong>
-              <small>내 순위</small>
-            </div>
+          <div className="my-rank-card compact-rank">
+            <span>현재 순위</span>
             <b>{myRank > 0 ? `#${myRank}` : "-"}</b>
-          </div>
-          <div className="my-stats-row">
-            <div className="my-stat">
-              <span>{xp.toLocaleString()}</span>
-            </div>
-            <div className="my-stat">
-              <span>{solved}</span>
-            </div>
-            <div className="my-stat">
-              <span>{myRank > 0 ? `#${myRank}` : "-"}</span>
-            </div>
           </div>
           <div className="xp-bar-wrap">
             <div className="xp-bar-track">
@@ -2630,6 +2761,7 @@ const NotebookPanel = forwardRef(function NotebookPanel(
   const [showConfetti, setShowConfetti] = useState(false);
   const [shaking, setShaking] = useState(false);
   const [showGrid, setShowGrid] = useState(false);
+  const [mobileSolveOpen, setMobileSolveOpen] = useState(true);
   const showGridRef = useRef(false);
   const canvasRef = useRef(null);
   const cursorRef = useRef(null);
@@ -2855,20 +2987,25 @@ const NotebookPanel = forwardRef(function NotebookPanel(
   }));
 
   return (
-    <section className="notebook-panel">
+    <section className={`notebook-panel ${mobileSolveOpen ? "" : "mobile-solve-collapsed"}`}>
       <Confetti active={showConfetti} />
       <div className="problem-header">
         <div>
           <span>{skill.stage} · {skill.unit}</span>
           <h2>{skill.title}</h2>
         </div>
-        <select value={selectedProblemId} onChange={(event) => setSelectedProblemId(event.target.value)}>
-          {problems.map((problem) => (
-            <option value={problem.id} key={problem.id}>
-              {problem.title}
-            </option>
-          ))}
-        </select>
+        <div className="problem-header-actions">
+          <select value={selectedProblemId} onChange={(event) => setSelectedProblemId(event.target.value)}>
+            {problems.map((problem) => (
+              <option value={problem.id} key={problem.id}>
+                {problem.title}
+              </option>
+            ))}
+          </select>
+          <button className="mobile-solve-toggle" type="button" onClick={() => setMobileSolveOpen((open) => !open)}>
+            {mobileSolveOpen ? "접기" : "풀이"}
+          </button>
+        </div>
       </div>
 
       {/* Skill progress bar */}
@@ -2898,6 +3035,7 @@ const NotebookPanel = forwardRef(function NotebookPanel(
         <ProblemAssets assets={selectedProblem?.assets || []} />
       </article>
 
+      <div className="solve-workspace">
       <div className="tool-row">
         <button className={tool === "pen" ? "active" : ""} onClick={() => setTool("pen")}>
           <PenLine size={17} />
@@ -2993,6 +3131,7 @@ const NotebookPanel = forwardRef(function NotebookPanel(
             해결 완료
           </button>
         </div>
+      </div>
       </div>
     </section>
   );

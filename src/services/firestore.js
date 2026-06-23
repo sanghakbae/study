@@ -35,6 +35,10 @@ export async function ensureUserProfile(user) {
       xp: 0,
       solvedCount: 0,
       masteredSkills: [],
+      lastSkillId: "",
+      lastProblemId: "",
+      loginGuideDismissUntil: 0,
+      aiGuideReviewCounts: {},
       createdAt: serverTimestamp(),
       lastSeenAt: serverTimestamp(),
     });
@@ -165,15 +169,37 @@ export async function updateUserRole({ uid, role, parentOf = [], displayName, gr
   });
 }
 
-export async function completeGuideWizard(uid) {
+export async function updateStudyLocation({ uid, skillId, problemId }) {
+  if (!uid || !skillId || !problemId) return;
   await setDoc(
     doc(db, "users", uid),
     {
-      guideWizardSeen: true,
+      lastSkillId: skillId,
+      lastProblemId: problemId,
       updatedAt: serverTimestamp(),
     },
     { merge: true },
   );
+}
+
+export async function suppressLoginGuideForSevenDays(uid) {
+  if (!uid) return;
+  await setDoc(
+    doc(db, "users", uid),
+    {
+      loginGuideDismissUntil: Date.now() + 7 * 24 * 60 * 60 * 1000,
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true },
+  );
+}
+
+export async function markAiGuideUsed({ uid, problemId }) {
+  if (!uid || !problemId) return;
+  await updateDoc(doc(db, "users", uid), {
+    [`aiGuideReviewCounts.${problemId}`]: 1,
+    updatedAt: serverTimestamp(),
+  });
 }
 
 export async function completeOnboarding({ user, role, grade }) {
