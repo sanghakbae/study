@@ -68,6 +68,7 @@ const gradeOptions = ["중1", "중2", "중3", "고1", "고2", "고3"];
 const problemLookup = new Map(generatedProblems.map((problem) => [problem.id, problem]));
 
 export default function App() {
+  const isManagerPath = window.location.pathname === "/manager";
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(fallbackUser);
   const [authReady, setAuthReady] = useState(false);
@@ -445,7 +446,11 @@ export default function App() {
   }
 
   if (!user) {
-    return <LoginScreen onLogin={handleLogin} />;
+    return isManagerPath ? <ManagerLoginScreen onLogin={() => handleLogin("admin")} /> : <LoginScreen onLogin={handleLogin} />;
+  }
+
+  if (isManagerPath && profile.role !== "admin") {
+    return <ManagerAccessDenied user={user} />;
   }
 
   if (!profile.onboardingComplete && profile.role !== "admin") {
@@ -686,6 +691,45 @@ function LoginScreen({ onLogin }) {
               <span>가입한 자녀를 조회해서 추가하고 학습 활동을 모니터링합니다.</span>
             </button>
           </div>
+        </div>
+      </div>
+    </main>
+  );
+}
+
+function ManagerLoginScreen({ onLogin }) {
+  return (
+    <main className="login-screen">
+      <div className="login-art">
+        <div className="login-panel manager-login-panel">
+          <div className="brand-mark large">
+            <ShieldCheck size={34} />
+          </div>
+          <h1>관리자 로그인</h1>
+          <p>관리자 계정으로 로그인하면 회원 관리와 학습 활동을 확인할 수 있습니다.</p>
+          <button className="google-button manager-google-button" onClick={onLogin}>
+            <UserRound size={16} />
+            Google로 관리자 로그인
+          </button>
+        </div>
+      </div>
+    </main>
+  );
+}
+
+function ManagerAccessDenied({ user }) {
+  return (
+    <main className="login-screen">
+      <div className="login-art">
+        <div className="login-panel manager-login-panel">
+          <div className="brand-mark large">
+            <ShieldCheck size={34} />
+          </div>
+          <h1>접근 권한 없음</h1>
+          <p>{user.email} 계정은 관리자 권한이 없습니다.</p>
+          <button className="google-button manager-google-button" onClick={() => signOut(auth)}>
+            다른 Google 계정으로 로그인
+          </button>
         </div>
       </div>
     </main>

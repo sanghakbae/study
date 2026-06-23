@@ -190,6 +190,14 @@ button:disabled {
   font-size: 0.78rem;
 }
 
+.manager-login-panel {
+  width: min(100%, 480px);
+}
+
+.manager-google-button {
+  width: min(100%, 260px);
+}
+
 .google-button svg {
   width: 14px;
   height: 14px;
