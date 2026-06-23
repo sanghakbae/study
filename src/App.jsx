@@ -82,9 +82,13 @@ function getLastLocationKey(uid) {
   return uid ? `study-last-location-${uid}` : "study-last-location";
 }
 
+function getSolvedBySkillKey(uid) {
+  return uid ? `study-solved-by-skill-${uid}` : "study-solved-by-skill";
+}
+
 function readLastStudyLocation(uid) {
   try {
-    const raw = localStorage.getItem(getLastLocationKey(uid)) || localStorage.getItem(getLastLocationKey());
+    const raw = localStorage.getItem(getLastLocationKey(uid));
     return raw ? JSON.parse(raw) : {};
   } catch {
     return {};
@@ -94,8 +98,32 @@ function readLastStudyLocation(uid) {
 function writeLastStudyLocation({ uid, skillId, problemId }) {
   if (!skillId || !problemId) return;
   const value = JSON.stringify({ skillId, problemId });
-  localStorage.setItem(getLastLocationKey(), value);
-  if (uid) localStorage.setItem(getLastLocationKey(uid), value);
+  localStorage.setItem(getLastLocationKey(uid), value);
+}
+
+function getProblemOrder(problem) {
+  const match = String(problem.id || "").match(/-(\d+)$/);
+  return match ? Number(match[1]) : Number.MAX_SAFE_INTEGER;
+}
+
+function sortProblemsByNumber(problems) {
+  return [...problems].sort((a, b) => getProblemOrder(a) - getProblemOrder(b) || String(a.id).localeCompare(String(b.id)));
+}
+
+function chooseProblemId({ problems, savedLocation, skillId }) {
+  const savedProblemId = savedLocation.skillId === skillId ? savedLocation.problemId : "";
+  if (problems.some((problem) => problem.id === savedProblemId)) return savedProblemId;
+  if (skillId === defaultSkillId && problems.some((problem) => problem.id === defaultProblemId)) return defaultProblemId;
+  return problems[0]?.id || "";
+}
+
+function readSolvedBySkill(uid) {
+  try {
+    const raw = localStorage.getItem(getSolvedBySkillKey(uid));
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
 }
 
 export default function App() {
@@ -128,13 +156,7 @@ export default function App() {
       return {};
     }
   });
-  const [solvedBySkill, setSolvedBySkill] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem("study-solved-by-skill") || "{}");
-    } catch {
-      return {};
-    }
-  });
+  const [solvedBySkill, setSolvedBySkill] = useState({});
   const [tool, setTool] = useState("pen");
   const [dataWarning, setDataWarning] = useState("");
   const [noteRatio, setNoteRatio] = useState(68);
@@ -158,8 +180,9 @@ export default function App() {
       setAuthReady(true);
       if (nextUser) {
         const savedLocation = readLastStudyLocation(nextUser.uid);
-        if (savedLocation.skillId) setSelectedSkillId(savedLocation.skillId);
-        if (savedLocation.problemId) setSelectedProblemId(savedLocation.problemId);
+        setSolvedBySkill(readSolvedBySkill(nextUser.uid));
+        setSelectedSkillId(savedLocation.skillId || defaultSkillId);
+        setSelectedProblemId(savedLocation.problemId || defaultProblemId);
         setProfile({
           uid: nextUser.uid,
           displayName: nextUser.displayName || "수학 러너",
@@ -181,6 +204,8 @@ export default function App() {
           console.error(error);
           setDataWarning(`Firestore 연결/권한 확인 필요: ${error.message}`);
         }
+      } else {
+        setSolvedBySkill({});
       }
     });
   }, []);
@@ -194,24 +219,18 @@ export default function App() {
     const skill = skills.find((s) => s.id === selectedSkillId) || curriculumNodes.find((s) => s.id === selectedSkillId);
     loadProblemsBySkill(selectedSkillId)
       .then((items) => {
-        const nextProblems = items.length >= 50 ? items : getFallbackProblems(skill);
+        const nextProblems = sortProblemsByNumber(items.length >= 50 ? items : getFallbackProblems(skill));
         const savedLocation = readLastStudyLocation(user.uid);
-        const savedProblemId = savedLocation.skillId === selectedSkillId ? savedLocation.problemId : "";
-        const nextProblemId = nextProblems.some((problem) => problem.id === savedProblemId)
-          ? savedProblemId
-          : nextProblems[0]?.id || "";
+        const nextProblemId = chooseProblemId({ problems: nextProblems, savedLocation, skillId: selectedSkillId });
         setProblems(nextProblems);
         setSelectedProblemId(nextProblemId);
         setGuide("새 문제를 열었습니다. 풀이를 쓰고 필요한 순간에 가이드를 요청하세요.");
       })
       .catch((error) => {
         console.error(error);
-        const nextProblems = getFallbackProblems(skill);
+        const nextProblems = sortProblemsByNumber(getFallbackProblems(skill));
         const savedLocation = readLastStudyLocation(user.uid);
-        const savedProblemId = savedLocation.skillId === selectedSkillId ? savedLocation.problemId : "";
-        const nextProblemId = nextProblems.some((problem) => problem.id === savedProblemId)
-          ? savedProblemId
-          : nextProblems[0]?.id || "";
+        const nextProblemId = chooseProblemId({ problems: nextProblems, savedLocation, skillId: selectedSkillId });
         setProblems(nextProblems);
         setSelectedProblemId(nextProblemId);
         setDataWarning("");
@@ -237,9 +256,7 @@ export default function App() {
       me = await loadUserProfile(uid);
     }
     if (me) setProfile(me);
-    if (Object.keys(progressMap).length > 0) {
-      setSolvedBySkill(progressMap);
-    }
+    setSolvedBySkill(progressMap);
   }
 
   async function refreshMembers(nextProfile = profile) {
@@ -503,8 +520,9 @@ export default function App() {
   }, [skills, completedSkills]);
 
   useEffect(() => {
-    localStorage.setItem("study-solved-by-skill", JSON.stringify(solvedBySkill));
-  }, [solvedBySkill]);
+    if (!user) return;
+    localStorage.setItem(getSolvedBySkillKey(user.uid), JSON.stringify(solvedBySkill));
+  }, [solvedBySkill, user]);
 
   if (!authReady) {
     return (
