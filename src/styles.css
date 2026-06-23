@@ -1418,20 +1418,28 @@ li:nth-child(3) .rank-num { color: #b45309; }
   font-weight: 950;
 }
 
-.activity-table th:nth-child(1),
-.activity-table td:nth-child(1) {
-  width: 150px;
+.activity-table .col-child {
+  width: 120px;
+  text-align: center;
 }
 
-.activity-table th:nth-child(2),
-.activity-table td:nth-child(2) {
+.activity-table .col-category {
   width: 170px;
+  text-align: center;
 }
 
-.activity-table th:last-child,
-.activity-table td:last-child {
+.activity-table th.col-problem {
+  text-align: center;
+}
+
+.activity-table .col-answer {
+  width: 110px;
+  text-align: center;
+}
+
+.activity-table .col-status {
   width: 92px;
-  text-align: right;
+  text-align: center;
 }
 
 .activity-table tr:last-child td {

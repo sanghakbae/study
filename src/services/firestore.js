@@ -193,7 +193,7 @@ export async function loadAttemptsForUsers(userIds) {
   return results.sort((a, b) => Number(b.completedAt?.seconds || b.createdAt?.seconds || 0) - Number(a.completedAt?.seconds || a.createdAt?.seconds || 0));
 }
 
-export async function saveAttempt({ user, problem, strokes, guide, isCorrect, status, alreadySolved, xpMultiplier = 1 }) {
+export async function saveAttempt({ user, problem, strokes, guide, isCorrect, status, alreadySolved, xpMultiplier = 1, submittedAnswer = "" }) {
   const attemptRef = doc(collection(db, "attempts"));
   const completed = status === "completed";
   const wrong = status === "wrong";
@@ -205,6 +205,7 @@ export async function saveAttempt({ user, problem, strokes, guide, isCorrect, st
     nodeId: problem.nodeId,
     problemTitle: problem.title || problem.id,
     problemPrompt: problem.prompt || "",
+    submittedAnswer,
     strokes,
     guide,
     isCorrect: completed && isCorrect,

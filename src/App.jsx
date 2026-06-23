@@ -405,6 +405,7 @@ export default function App() {
         guide,
         isCorrect: false,
         status: "wrong",
+        submittedAnswer: inputAnswer,
       });
       await refreshMembers();
     } catch (error) {
@@ -1181,6 +1182,7 @@ function ChildActivityLog({ children, attempts }) {
         nodeId: a.nodeId,
         problemId: a.problemId,
         ...getProblemText(a),
+        submittedAnswer: getSubmittedAnswer(a),
         count: 0,
       };
       wrongByChild.set(key, { ...current, count: current.count + 1 });
@@ -1202,19 +1204,21 @@ function ChildActivityLog({ children, attempts }) {
             <table className="activity-table">
               <thead>
                 <tr>
-                  {showChildName && <th>자녀</th>}
-                  <th>구분</th>
-                  <th>문제</th>
-                  <th>상태</th>
+                  {showChildName && <th className="col-child">자녀</th>}
+                  <th className="col-category">구분</th>
+                  <th className="col-problem">문제</th>
+                  <th className="col-answer">입력 답</th>
+                  <th className="col-status">상태</th>
                 </tr>
               </thead>
               <tbody>
                 {topWrong.map((item) => (
                   <tr key={`${item.uid}-${item.nodeId}-${item.problemId}`}>
-                    {showChildName && <td>{childName.get(item.uid) || "자녀"}</td>}
-                    <td>{item.title}</td>
-                    <td>{item.prompt || item.nodeId}</td>
-                    <td><strong className="wrong-status">오답 {item.count}회</strong></td>
+                    {showChildName && <td className="col-child">{childName.get(item.uid) || "자녀"}</td>}
+                    <td className="col-category">{item.category}</td>
+                    <td className="col-problem">{item.prompt || item.nodeId}</td>
+                    <td className="col-answer">{item.submittedAnswer || "기록 없음"}</td>
+                    <td className="col-status"><strong className="wrong-status">오답 {item.count}회</strong></td>
                   </tr>
                 ))}
               </tbody>
@@ -1229,10 +1233,11 @@ function ChildActivityLog({ children, attempts }) {
             <table className="activity-table">
               <thead>
                 <tr>
-                  {showChildName && <th>자녀</th>}
-                  <th>구분</th>
-                  <th>문제</th>
-                  <th>상태</th>
+                  {showChildName && <th className="col-child">자녀</th>}
+                  <th className="col-category">구분</th>
+                  <th className="col-problem">문제</th>
+                  <th className="col-answer">입력 답</th>
+                  <th className="col-status">상태</th>
                 </tr>
               </thead>
               <tbody>
@@ -1240,10 +1245,11 @@ function ChildActivityLog({ children, attempts }) {
                   const problemText = getProblemText(a);
                   return (
                     <tr key={a.id}>
-                      {showChildName && <td>{childName.get(a.uid) || "자녀"}</td>}
-                      <td>{problemText.title}</td>
-                      <td>{problemText.prompt || `${a.nodeId} · ${a.problemId}`}</td>
-                      <td><strong className={a.completed ? "positive" : ""}>{a.completed ? "해결 완료" : "풀이 저장"}</strong></td>
+                      {showChildName && <td className="col-child">{childName.get(a.uid) || "자녀"}</td>}
+                      <td className="col-category">{problemText.category}</td>
+                      <td className="col-problem">{problemText.prompt || `${a.nodeId} · ${a.problemId}`}</td>
+                      <td className="col-answer">{getSubmittedAnswer(a) || "-"}</td>
+                      <td className="col-status"><strong className={a.completed ? "positive" : ""}>{a.completed ? "해결 완료" : "풀이 저장"}</strong></td>
                     </tr>
                   );
                 })}
@@ -1262,10 +1268,16 @@ function formatSignedNumber(value) {
 
 function getProblemText(attempt) {
   const problem = problemLookup.get(attempt.problemId);
+  const title = attempt.problemTitle || problem?.title || attempt.problemId;
   return {
-    title: attempt.problemTitle || problem?.title || attempt.problemId,
+    title,
+    category: title.replace(/\s+\d+$/, ""),
     prompt: attempt.problemPrompt || problem?.prompt || "",
   };
+}
+
+function getSubmittedAnswer(attempt) {
+  return attempt.submittedAnswer || attempt.inputAnswer || attempt.answerInput || "";
 }
 
 function ActivityPanel({ members, attempts }) {
@@ -1278,7 +1290,7 @@ function ActivityPanel({ members, attempts }) {
         <div className="wrong-list">
           {frequentWrong.map((item) => (
             <div className="wrong-row" key={`${item.nodeId}-${item.problemId}`}>
-              <strong>{item.title}</strong>
+              <strong>{item.category}</strong>
               <span>{item.prompt || item.nodeId}</span>
               <b>{item.count}회</b>
             </div>
@@ -1313,6 +1325,7 @@ function getFrequentWrongProblems(attempts) {
         nodeId: attempt.nodeId,
         problemId: attempt.problemId,
         ...getProblemText(attempt),
+        submittedAnswer: getSubmittedAnswer(attempt),
         count: 0,
       };
       grouped.set(key, { ...current, count: current.count + 1 });
