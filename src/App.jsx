@@ -59,9 +59,9 @@ const fallbackUser = {
 
 const guideActions = [
   { key: "check", label: "AI 가이드", icon: ShieldCheck },
-  { key: "next", label: "풀이 방향", icon: ChevronRight },
-  { key: "hint", label: "힌트 받기", icon: HelpCircle },
-  { key: "concept", label: "개념 다시보기", icon: BookOpen },
+  { key: "next", label: "풀이 방향", icon: ChevronRight, xpPenalty: true },
+  { key: "hint", label: "힌트 받기", icon: HelpCircle, xpPenalty: true },
+  { key: "concept", label: "개념 다시보기", icon: BookOpen, xpPenalty: true },
 ];
 
 const gradeOptions = ["중1", "중2", "중3", "고1", "고2", "고3"];
@@ -277,7 +277,6 @@ export default function App() {
       return;
     }
 
-    trackHintUse(selectedProblem.id);
     setGuideLoading(true);
     setGuide(`${action.label} 요청 중...`);
     try {
@@ -1802,6 +1801,7 @@ function GuidePanel({ problem, guide, guideLoading, reviewCount, answerCheck, is
               <Icon size={17} />
               {action.label}
               {isCheck && <small>{Math.max(0, 3 - reviewCount)}/3</small>}
+              {action.xpPenalty && <small>XP -5%</small>}
             </button>
           );
         })}
