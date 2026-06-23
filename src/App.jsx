@@ -341,6 +341,7 @@ export default function App() {
 
     const alreadySolved = (solvedBySkill[selectedSkillId] || []).includes(problem.id);
     const hints = getGuidePenaltyCount(problem.id);
+    const helpUsed = Array.isArray(hintUsed[problem.id]) ? hintUsed[problem.id] : [];
     const xpMultiplier = Math.max(0.3, 1 - hints * 0.05);
 
     if (completed) {
@@ -358,6 +359,7 @@ export default function App() {
         status: completed ? "completed" : "saved",
         alreadySolved,
         xpMultiplier,
+        helpUsed,
       });
       if (!completed) {
         setGuide("풀이가 저장됐습니다. 해결 완료를 눌러야 다음 문제로 넘어갑니다.");
@@ -406,6 +408,7 @@ export default function App() {
         isCorrect: false,
         status: "wrong",
         submittedAnswer: inputAnswer,
+        helpUsed: Array.isArray(hintUsed[selectedProblem.id]) ? hintUsed[selectedProblem.id] : [],
       });
       await refreshMembers();
     } catch (error) {
@@ -587,7 +590,7 @@ function ParentPage({ user, profile, members, attempts, leaders, onRegisterChild
       <Topbar user={user} profile={profile} />
       <section className="parent-layout">
         <ParentInsightPanel profile={profile} members={members} attempts={attempts} onRegisterChild={onRegisterChild} />
-        <Leaderboard leaders={leaders} currentUid={user.uid} />
+        <Leaderboard leaders={leaders} currentUid={user.uid} showMyStats={false} />
       </section>
     </main>
   );
@@ -846,7 +849,7 @@ function SkillTree({ skills, selectedSkillId, completedSkills, solvedBySkill, un
   );
 }
 
-function Leaderboard({ leaders, currentUid, profile }) {
+function Leaderboard({ leaders, currentUid, profile, showMyStats = true }) {
   const myRank = leaders.findIndex((l) => l.uid === currentUid) + 1;
   const xp = profile?.xp || 0;
   const solved = profile?.solvedCount || 0;
@@ -860,26 +863,27 @@ function Leaderboard({ leaders, currentUid, profile }) {
         <h2>랭킹</h2>
       </div>
 
-      {/* My stats card */}
-      <div className="my-stats-card">
-        <div className="my-stats-row">
-          <div className="my-stat">
-            <span>{xp.toLocaleString()}</span>
+      {showMyStats && (
+        <div className="my-stats-card">
+          <div className="my-stats-row">
+            <div className="my-stat">
+              <span>{xp.toLocaleString()}</span>
+            </div>
+            <div className="my-stat">
+              <span>{solved}</span>
+            </div>
+            <div className="my-stat">
+              <span>{myRank > 0 ? `#${myRank}` : "-"}</span>
+            </div>
           </div>
-          <div className="my-stat">
-            <span>{solved}</span>
-          </div>
-          <div className="my-stat">
-            <span>{myRank > 0 ? `#${myRank}` : "-"}</span>
+          <div className="xp-bar-wrap">
+            <div className="xp-bar-track">
+              <div className="xp-bar-fill" style={{ width: `${xpPct}%` }} />
+            </div>
+            <small>Lv.{level} &nbsp;·&nbsp; {xp % 200} / 200 XP → Lv.{level + 1}</small>
           </div>
         </div>
-        <div className="xp-bar-wrap">
-          <div className="xp-bar-track">
-            <div className="xp-bar-fill" style={{ width: `${xpPct}%` }} />
-          </div>
-          <small>Lv.{level} &nbsp;·&nbsp; {xp % 200} / 200 XP → Lv.{level + 1}</small>
-        </div>
-      </div>
+      )}
 
       <ol className="leader-list">
         {leaders.length ? leaders.slice(0, 6).map((leader, index) => (
@@ -1110,6 +1114,8 @@ function ParentInsightPanel({ profile, members, attempts, onRegisterChild }) {
           const above = rankIndex > 0 ? students[rankIndex - 1] : null;
           const xpDiff = (child.xp || 0) - avgXp;
           const solvedDiff = (child.solvedCount || 0) - avgSolved;
+          const childAttempts = attempts.filter((attempt) => attempt.uid === child.uid);
+          const dashboard = buildChildDashboard({ child, attempts: childAttempts, students, rankIndex, avgXp, avgSolved });
           return (
             <div className="child-card" key={child.uid}>
               <div className="child-card-header">
@@ -1121,22 +1127,23 @@ function ParentInsightPanel({ profile, members, attempts, onRegisterChild }) {
               </div>
               <div className="child-stats">
                 <div className="child-stat">
-                  <span>{child.xp || 0}</span>
                   <label>XP</label>
+                  <span>{child.xp || 0}</span>
                 </div>
                 <div className="child-stat">
-                  <span>{child.solvedCount || 0}</span>
                   <label>문제 해결</label>
+                  <span>{child.solvedCount || 0}</span>
                 </div>
                 <div className={`child-stat ${xpDiff >= 0 ? "positive" : "negative"}`}>
-                  <span>{formatSignedNumber(xpDiff)}</span>
                   <label>평균 XP 대비</label>
+                  <span>{formatSignedNumber(xpDiff)}</span>
                 </div>
                 <div className={`child-stat ${solvedDiff >= 0 ? "positive" : "negative"}`}>
-                  <span>{formatSignedNumber(solvedDiff)}</span>
                   <label>평균 해결 수 대비</label>
+                  <span>{formatSignedNumber(solvedDiff)}</span>
                 </div>
               </div>
+              <ChildDashboard dashboard={dashboard} />
               {above && (
                 <div className="child-gap">
                   <TrendingUp size={13} />
@@ -1165,6 +1172,114 @@ function ParentInsightPanel({ profile, members, attempts, onRegisterChild }) {
       )}
     </div>
   );
+}
+
+function ChildDashboard({ dashboard }) {
+  return (
+    <div className="parent-dashboard">
+      <div className="parent-dashboard-section">
+        <h3>상단 요약</h3>
+        <div className="parent-metric-grid">
+          {dashboard.summary.map((item) => (
+            <div className="parent-metric" key={item.label}>
+              <span>{item.label}</span>
+              <strong>{item.value}</strong>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="parent-dashboard-section">
+        <h3>위험 신호</h3>
+        <div className="parent-signal-grid">
+          {dashboard.risks.map((item) => (
+            <div className={`parent-signal ${item.alert ? "alert" : ""}`} key={item.label}>
+              <span>{item.label}</span>
+              <strong>{item.value}</strong>
+              {item.detail && <small>{item.detail}</small>}
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="parent-dashboard-section">
+        <h3>비교/성장</h3>
+        <div className="parent-signal-grid">
+          {dashboard.growth.map((item) => (
+            <div className="parent-signal" key={item.label}>
+              <span>{item.label}</span>
+              <strong>{item.value}</strong>
+              {item.detail && <small>{item.detail}</small>}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function buildChildDashboard({ child, attempts, students, rankIndex, avgXp, avgSolved }) {
+  const now = Date.now();
+  const sevenDays = 7 * 24 * 60 * 60 * 1000;
+  const fourteenDays = 14 * 24 * 60 * 60 * 1000;
+  const recent = attempts.filter((attempt) => now - getAttemptTime(attempt) <= sevenDays);
+  const previous = attempts.filter((attempt) => {
+    const time = getAttemptTime(attempt);
+    return now - time > sevenDays && now - time <= fourteenDays;
+  });
+  const completedRecent = recent.filter((attempt) => attempt.completed).length;
+  const completedPrevious = previous.filter((attempt) => attempt.completed).length;
+  const checkedRecent = recent.filter((attempt) => attempt.completed || attempt.status === "wrong" || attempt.wrong);
+  const correctRecent = checkedRecent.filter((attempt) => attempt.completed).length;
+  const accuracy = checkedRecent.length ? `${Math.round((correctRecent / checkedRecent.length) * 100)}%` : "-";
+  const latest = attempts[0];
+  const latestText = latest ? getProblemText(latest) : null;
+  const overallTotal = curriculumNodes.length * 50;
+  const completeRate = overallTotal ? `${Math.min(100, Math.round(((child.solvedCount || 0) / overallTotal) * 100))}%` : "-";
+  const repeatedWrong = getTopGrouped(
+    attempts.filter((attempt) => attempt.status === "wrong" || attempt.wrong),
+    (attempt) => attempt.problemId,
+    (attempt) => getProblemText(attempt).prompt || attempt.problemId,
+  );
+  const heavyHelp = getTopGrouped(
+    attempts.filter((attempt) => getHelpUsed(attempt).length),
+    (attempt) => getProblemText(attempt).category,
+    (attempt) => getProblemText(attempt).category,
+    (attempt) => getHelpUsed(attempt).length,
+  );
+  const lastTime = latest ? getAttemptTime(latest) : 0;
+  const staleDays = lastTime ? Math.floor((now - lastTime) / (24 * 60 * 60 * 1000)) : null;
+  const sameGrade = students.filter((student) => student.grade === child.grade);
+  const gradeAvgSolved = sameGrade.length ? Math.round(sameGrade.reduce((sum, student) => sum + (student.solvedCount || 0), 0) / sameGrade.length) : avgSolved;
+  const rankText = rankIndex >= 0 ? `전체 ${rankIndex + 1}위` : "-";
+
+  return {
+    summary: [
+      { label: "현재 진행 단원", value: latestText?.category || "기록 없음" },
+      { label: "전체 완료율", value: completeRate },
+      { label: "최근 7일 해결", value: `${completedRecent}문제` },
+      { label: "최근 7일 정답률", value: accuracy },
+    ],
+    risks: [
+      { label: "반복 오답 문제", value: repeatedWrong ? `${repeatedWrong.label}` : "없음", detail: repeatedWrong ? `${repeatedWrong.count}회` : "", alert: !!repeatedWrong },
+      { label: "힌트 많이 쓴 단원", value: heavyHelp ? heavyHelp.label : "없음", detail: heavyHelp ? `${heavyHelp.count}회` : "", alert: !!heavyHelp },
+      { label: "오래 멈춘 단원", value: staleDays == null ? "기록 없음" : staleDays >= 7 ? latestText?.category || "확인 필요" : "없음", detail: staleDays == null ? "" : `${staleDays}일 전`, alert: staleDays >= 7 },
+    ],
+    growth: [
+      { label: "같은 학년 평균 대비", value: formatSignedNumber((child.solvedCount || 0) - gradeAvgSolved), detail: "해결 문제 수" },
+      { label: "지난주 대비", value: formatSignedNumber(completedRecent - completedPrevious), detail: "최근 7일 해결 수" },
+      { label: "랭킹 변화", value: rankText, detail: "현재 기준" },
+    ],
+  };
+}
+
+function getTopGrouped(items, keyFn, labelFn, weightFn = () => 1) {
+  const grouped = new Map();
+  for (const item of items) {
+    const key = keyFn(item);
+    const current = grouped.get(key) || { label: labelFn(item), count: 0 };
+    current.count += weightFn(item);
+    grouped.set(key, current);
+  }
+  return Array.from(grouped.values()).sort((a, b) => b.count - a.count)[0] || null;
 }
 
 function ChildActivityLog({ children, attempts }) {
@@ -1205,10 +1320,12 @@ function ChildActivityLog({ children, attempts }) {
               <thead>
                 <tr>
                   {showChildName && <th className="col-child">자녀</th>}
+                  <th className="col-date">날짜</th>
                   <th className="col-category">구분</th>
                   <th className="col-problem">문제</th>
                   <th className="col-answer">입력 답</th>
-                  <th className="col-status">상태</th>
+                  <th className="col-status">결과</th>
+                  <th className="col-help">사용한 도움</th>
                 </tr>
               </thead>
               <tbody>
@@ -1246,10 +1363,12 @@ function ChildActivityLog({ children, attempts }) {
                   return (
                     <tr key={a.id}>
                       {showChildName && <td className="col-child">{childName.get(a.uid) || "자녀"}</td>}
+                      <td className="col-date">{formatAttemptDate(a)}</td>
                       <td className="col-category">{problemText.category}</td>
                       <td className="col-problem">{problemText.prompt || `${a.nodeId} · ${a.problemId}`}</td>
                       <td className="col-answer">{getSubmittedAnswer(a) || "-"}</td>
-                      <td className="col-status"><strong className={a.completed ? "positive" : ""}>{a.completed ? "해결 완료" : "풀이 저장"}</strong></td>
+                      <td className="col-status"><strong className={getAttemptResultClass(a)}>{getAttemptResult(a)}</strong></td>
+                      <td className="col-help">{formatHelpUsed(a)}</td>
                     </tr>
                   );
                 })}
@@ -1276,8 +1395,49 @@ function getProblemText(attempt) {
   };
 }
 
+function getAttemptTime(attempt) {
+  const source = attempt.completedAt || attempt.createdAt;
+  if (!source) return 0;
+  if (typeof source.seconds === "number") return source.seconds * 1000;
+  if (typeof source === "string") return new Date(source).getTime() || 0;
+  return 0;
+}
+
+function formatAttemptDate(attempt) {
+  const time = getAttemptTime(attempt);
+  if (!time) return "-";
+  return new Intl.DateTimeFormat("ko-KR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(time));
+}
+
 function getSubmittedAnswer(attempt) {
   return attempt.submittedAnswer || attempt.inputAnswer || attempt.answerInput || "";
+}
+
+function getHelpUsed(attempt) {
+  return Array.isArray(attempt.helpUsed) ? attempt.helpUsed : [];
+}
+
+function formatHelpUsed(attempt) {
+  const labelMap = {
+    next: "풀이 방향",
+    hint: "힌트",
+    concept: "개념",
+  };
+  const labels = getHelpUsed(attempt).map((item) => labelMap[item] || item);
+  return labels.length ? labels.join(", ") : "-";
+}
+
+function getAttemptResult(attempt) {
+  if (attempt.completed) return "해결 완료";
+  if (attempt.status === "wrong" || attempt.wrong) return "오답";
+  if (attempt.saved || attempt.status === "saved") return "풀이 저장";
+  return attempt.status || "-";
+}
+
+function getAttemptResultClass(attempt) {
+  if (attempt.completed) return "positive";
+  if (attempt.status === "wrong" || attempt.wrong) return "wrong-status";
+  return "";
 }
 
 function ActivityPanel({ members, attempts }) {

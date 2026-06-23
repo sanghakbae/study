@@ -186,14 +186,14 @@ export async function loadAttemptsForUsers(userIds) {
   }
   const results = [];
   for (const chunk of chunks) {
-    const q = query(collection(db, "attempts"), where("uid", "in", chunk), limit(100));
+    const q = query(collection(db, "attempts"), where("uid", "in", chunk), limit(300));
     const snap = await getDocs(q);
     results.push(...snap.docs.map((item) => ({ id: item.id, ...item.data() })));
   }
   return results.sort((a, b) => Number(b.completedAt?.seconds || b.createdAt?.seconds || 0) - Number(a.completedAt?.seconds || a.createdAt?.seconds || 0));
 }
 
-export async function saveAttempt({ user, problem, strokes, guide, isCorrect, status, alreadySolved, xpMultiplier = 1, submittedAnswer = "" }) {
+export async function saveAttempt({ user, problem, strokes, guide, isCorrect, status, alreadySolved, xpMultiplier = 1, submittedAnswer = "", helpUsed = [] }) {
   const attemptRef = doc(collection(db, "attempts"));
   const completed = status === "completed";
   const wrong = status === "wrong";
@@ -206,6 +206,7 @@ export async function saveAttempt({ user, problem, strokes, guide, isCorrect, st
     problemTitle: problem.title || problem.id,
     problemPrompt: problem.prompt || "",
     submittedAnswer,
+    helpUsed,
     strokes,
     guide,
     isCorrect: completed && isCorrect,
