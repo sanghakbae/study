@@ -46,7 +46,7 @@ import {
   updateUserRole,
 } from "./services/firestore";
 import { curriculumNodes } from "./data/curriculum";
-import { getProblemsForSkill } from "./data/problemBank";
+import { generatedProblems, getProblemsForSkill } from "./data/problemBank";
 import { externalProblemSources } from "./services/problemSources";
 
 const fallbackUser = {
@@ -65,6 +65,7 @@ const guideActions = [
 ];
 
 const gradeOptions = ["중1", "중2", "중3", "고1", "고2", "고3"];
+const problemLookup = new Map(generatedProblems.map((problem) => [problem.id, problem]));
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -304,11 +305,11 @@ export default function App() {
     }
   }
 
-  function markProblemCompleted(problemId) {
+  function markProblemCompleted(problemId, nodeId = selectedSkillId) {
     setSolvedBySkill((current) => {
-      const solved = new Set(current[selectedSkillId] || []);
+      const solved = new Set(current[nodeId] || []);
       solved.add(problemId);
-      return { ...current, [selectedSkillId]: Array.from(solved) };
+      return { ...current, [nodeId]: Array.from(solved) };
     });
   }
 
@@ -323,9 +324,9 @@ export default function App() {
     setGuide("이 스킬의 50문제를 모두 완료했습니다. 스킬 트리에서 다음 열린 스킬을 선택하세요.");
   }
 
-  async function handleSaveAttempt(completed) {
-    if (!user || !selectedProblem) return;
-    const problem = selectedProblem;
+  async function handleSaveAttempt(completed, problemOverride = selectedProblem) {
+    if (!user || !problemOverride) return;
+    const problem = problemOverride;
     setSaving(true);
 
     const alreadySolved = (solvedBySkill[selectedSkillId] || []).includes(problem.id);
@@ -333,7 +334,7 @@ export default function App() {
     const xpMultiplier = Math.max(0.3, 1 - hints * 0.05);
 
     if (completed) {
-      markProblemCompleted(problem.id);
+      markProblemCompleted(problem.id, problem.nodeId);
       advanceToNextProblem(problem.id);
     }
 
@@ -1162,24 +1163,23 @@ function ParentInsightPanel({ profile, members, attempts, onRegisterChild }) {
 function ChildActivityLog({ children, attempts }) {
   const childIds = new Set(children.map((c) => c.uid));
   const childName = new Map(children.map((c) => [c.uid, formatStudentName(c)]));
+  const showChildName = children.length > 1;
   const childAttempts = attempts.filter((a) => childIds.has(a.uid)).slice(0, 20);
   const wrongByChild = new Map();
   attempts
     .filter((a) => childIds.has(a.uid) && (a.status === "wrong" || a.wrong))
     .forEach((a) => {
       const key = `${a.uid}-${a.nodeId}-${a.problemId}`;
-      wrongByChild.set(key, (wrongByChild.get(key) || 0) + 1);
+      const current = wrongByChild.get(key) || {
+        uid: a.uid,
+        nodeId: a.nodeId,
+        problemId: a.problemId,
+        ...getProblemText(a),
+        count: 0,
+      };
+      wrongByChild.set(key, { ...current, count: current.count + 1 });
     });
-  const topWrong = Array.from(wrongByChild.entries())
-    .map(([key, count]) => {
-      const [uid, nodeId, problemId] = key.split("-").reduce((acc, part, i) => {
-        if (i === 0) acc.push(part);
-        else if (i === 1) acc.push(part);
-        else acc[2] = (acc[2] || "") + (i > 2 ? `-${part}` : part);
-        return acc;
-      }, []);
-      return { uid, nodeId, problemId, count };
-    })
+  const topWrong = Array.from(wrongByChild.values())
     .sort((a, b) => b.count - a.count)
     .slice(0, 5);
 
@@ -1195,8 +1195,8 @@ function ChildActivityLog({ children, attempts }) {
           <div className="wrong-list">
             {topWrong.map((item) => (
               <div className="wrong-row" key={`${item.uid}-${item.nodeId}-${item.problemId}`}>
-                <strong>{childName.get(item.uid) || "자녀"}</strong>
-                <span>{item.nodeId}</span>
+                <strong>{showChildName ? `${childName.get(item.uid) || "자녀"} · ${item.title}` : item.title}</strong>
+                <span>{item.prompt || item.nodeId}</span>
                 <b>{item.count}회</b>
               </div>
             ))}
@@ -1208,8 +1208,8 @@ function ChildActivityLog({ children, attempts }) {
           <p className="activity-subtitle">최근 활동</p>
           {childAttempts.map((a) => (
             <div className="activity-row" key={a.id}>
-              <strong>{childName.get(a.uid) || "자녀"}</strong>
-              <span>{a.nodeId} · {a.problemId}</span>
+              <strong>{showChildName ? `${childName.get(a.uid) || "자녀"} · ${getProblemText(a).title}` : getProblemText(a).title}</strong>
+              <span>{getProblemText(a).prompt || `${a.nodeId} · ${a.problemId}`}</span>
               <small className={a.completed ? "positive" : ""}>{a.completed ? "해결 완료" : "풀이 저장"}</small>
             </div>
           ))}
@@ -1223,6 +1223,14 @@ function formatSignedNumber(value) {
   return value > 0 ? `+${value}` : `${value}`;
 }
 
+function getProblemText(attempt) {
+  const problem = problemLookup.get(attempt.problemId);
+  return {
+    title: attempt.problemTitle || problem?.title || attempt.problemId,
+    prompt: attempt.problemPrompt || problem?.prompt || "",
+  };
+}
+
 function ActivityPanel({ members, attempts }) {
   const memberName = new Map(members.map((member) => [member.uid, member.displayName || member.email || "학생"]));
   const frequentWrong = getFrequentWrongProblems(attempts);
@@ -1233,8 +1241,8 @@ function ActivityPanel({ members, attempts }) {
         <div className="wrong-list">
           {frequentWrong.map((item) => (
             <div className="wrong-row" key={`${item.nodeId}-${item.problemId}`}>
-              <strong>{item.problemId}</strong>
-              <span>{item.nodeId}</span>
+              <strong>{item.title}</strong>
+              <span>{item.prompt || item.nodeId}</span>
               <b>{item.count}회</b>
             </div>
           ))}
@@ -1246,8 +1254,8 @@ function ActivityPanel({ members, attempts }) {
       {attempts.length ? (
         attempts.slice(0, 12).map((attempt) => (
           <div className="activity-row" key={attempt.id}>
-            <strong>{memberName.get(attempt.uid) || "학생"}</strong>
-            <span>{attempt.nodeId} · {attempt.problemId}</span>
+            <strong>{memberName.get(attempt.uid) || "학생"} · {getProblemText(attempt).title}</strong>
+            <span>{getProblemText(attempt).prompt || `${attempt.nodeId} · ${attempt.problemId}`}</span>
             <small>{attempt.completed ? "해결 완료" : "풀이 저장"}</small>
           </div>
         ))
@@ -1267,6 +1275,7 @@ function getFrequentWrongProblems(attempts) {
       const current = grouped.get(key) || {
         nodeId: attempt.nodeId,
         problemId: attempt.problemId,
+        ...getProblemText(attempt),
         count: 0,
       };
       grouped.set(key, { ...current, count: current.count + 1 });
@@ -1366,6 +1375,7 @@ const NotebookPanel = forwardRef(function NotebookPanel(
   const drawingRef = useRef(false);
   const currentStrokeRef = useRef([]);
   const lastPointRef = useRef(null);
+  const activePointerIdRef = useRef(null);
   const toolRef = useRef(tool);
   const scrollLockYRef = useRef(0);
 
@@ -1376,7 +1386,6 @@ const NotebookPanel = forwardRef(function NotebookPanel(
 
   useEffect(() => {
     showGridRef.current = showGrid;
-    redraw();
   }, [showGrid]);
 
   useEffect(() => {
@@ -1392,7 +1401,7 @@ const NotebookPanel = forwardRef(function NotebookPanel(
       canvas.height = nextHeight;
       canvas.style.width = `${rect.width}px`;
       canvas.style.height = `${rect.height}px`;
-      ctxRef.current = canvas.getContext("2d", { alpha: false, desynchronized: true });
+      ctxRef.current = canvas.getContext("2d", { alpha: true, desynchronized: true });
       redraw();
     };
     resize();
@@ -1453,51 +1462,41 @@ const NotebookPanel = forwardRef(function NotebookPanel(
     if (stroke.points.length < 2) return;
     const ctx = ctxRef.current;
     if (!ctx) return;
+    ctx.save();
+    ctx.globalCompositeOperation = stroke.tool === "eraser" ? "destination-out" : "source-over";
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
-    ctx.strokeStyle = stroke.tool === "eraser" ? "#ffffff" : "#111827";
+    ctx.strokeStyle = stroke.tool === "eraser" ? "rgba(0,0,0,1)" : "#111827";
     ctx.lineWidth = stroke.tool === "eraser" ? 30 : 3.5;
     ctx.beginPath();
     ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
     stroke.points.slice(1).forEach((point) => ctx.lineTo(point.x, point.y));
     ctx.stroke();
+    ctx.restore();
   }
 
   function drawSegment(from, to, strokeTool) {
     const ctx = ctxRef.current;
     if (!ctx || !from || !to) return;
+    ctx.save();
+    ctx.globalCompositeOperation = strokeTool === "eraser" ? "destination-out" : "source-over";
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
-    ctx.strokeStyle = strokeTool === "eraser" ? "#ffffff" : "#111827";
+    ctx.strokeStyle = strokeTool === "eraser" ? "rgba(0,0,0,1)" : "#111827";
     ctx.lineWidth = strokeTool === "eraser" ? 30 : 3.5;
     ctx.beginPath();
     ctx.moveTo(from.x, from.y);
     ctx.lineTo(to.x, to.y);
     ctx.stroke();
-  }
-
-  function drawGrid(ctx, canvas) {
-    const step = Math.round(24 * (window.devicePixelRatio || 1));
-    ctx.save();
-    ctx.strokeStyle = "#e2e8f0";
-    ctx.lineWidth = 1;
-    for (let x = step; x < canvas.width; x += step) {
-      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
-    }
-    for (let y = step; y < canvas.height; y += step) {
-      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
-    }
     ctx.restore();
   }
 
   function redraw() {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = ctxRef.current || canvas.getContext("2d", { alpha: false, desynchronized: true });
+    const ctx = ctxRef.current || canvas.getContext("2d", { alpha: true, desynchronized: true });
     ctxRef.current = ctx;
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    if (showGridRef.current) drawGrid(ctx, canvas);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
     strokesRef.current.forEach(drawStroke);
   }
 
@@ -1509,9 +1508,11 @@ const NotebookPanel = forwardRef(function NotebookPanel(
   }
 
   function startDrawing(event) {
+    if (event.pointerType === "touch") return;
     event.preventDefault();
     event.stopPropagation();
     drawingRef.current = true;
+    activePointerIdRef.current = event.pointerId;
     scrollLockYRef.current = window.scrollY;
     document.body.classList.add("drawing-on-canvas");
     const point = getPoint(event);
@@ -1521,6 +1522,8 @@ const NotebookPanel = forwardRef(function NotebookPanel(
   }
 
   function moveDrawing(event) {
+    if (event.pointerType === "touch") return;
+    if (activePointerIdRef.current != null && event.pointerId !== activePointerIdRef.current) return;
     updateCursor(event);
     if (!drawingRef.current) return;
     event.preventDefault();
@@ -1538,6 +1541,7 @@ const NotebookPanel = forwardRef(function NotebookPanel(
   }
 
   function endDrawing(event) {
+    if (activePointerIdRef.current != null && event?.pointerId !== activePointerIdRef.current) return;
     if (!drawingRef.current) return;
     event?.preventDefault?.();
     event?.stopPropagation?.();
@@ -1547,6 +1551,7 @@ const NotebookPanel = forwardRef(function NotebookPanel(
     strokesRef.current.push({ tool: toolRef.current, points: currentStrokeRef.current });
     currentStrokeRef.current = [];
     lastPointRef.current = null;
+    activePointerIdRef.current = null;
     if (event?.pointerId != null && canvasRef.current?.hasPointerCapture?.(event.pointerId)) {
       canvasRef.current.releasePointerCapture(event.pointerId);
     }
@@ -1575,7 +1580,14 @@ const NotebookPanel = forwardRef(function NotebookPanel(
     exportCanvasImage: () => {
       const canvas = canvasRef.current;
       if (!canvas || strokesRef.current.length === 0) return null;
-      return canvas.toDataURL("image/jpeg", 0.85);
+      const exportCanvas = document.createElement("canvas");
+      exportCanvas.width = canvas.width;
+      exportCanvas.height = canvas.height;
+      const exportCtx = exportCanvas.getContext("2d");
+      exportCtx.fillStyle = "#ffffff";
+      exportCtx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+      exportCtx.drawImage(canvas, 0, 0);
+      return exportCanvas.toDataURL("image/jpeg", 0.85);
     },
   }));
 
@@ -1650,7 +1662,7 @@ const NotebookPanel = forwardRef(function NotebookPanel(
         </button>
       </div>
 
-      <div className="canvas-wrap">
+      <div className={`canvas-wrap ${showGrid ? "show-grid" : ""}`}>
         <div className="eraser-cursor" ref={cursorRef} />
         <canvas
           ref={canvasRef}
@@ -1672,7 +1684,7 @@ const NotebookPanel = forwardRef(function NotebookPanel(
                     if (answerCheck?.status === "correct") return;
                     setAnswerInput(choice);
                     const correct = await onAnswerCheck(choice);
-                    if (correct) { setShowConfetti(true); setTimeout(() => setShowConfetti(false), 3200); setTimeout(() => onSave(true), 1500); }
+                    if (correct) { setShowConfetti(true); setTimeout(() => setShowConfetti(false), 3200); setTimeout(() => onSave(true, selectedProblem), 1500); }
                     else { setShaking(true); setTimeout(() => setShaking(false), 500); }
                   }}
                   disabled={saving}
@@ -1692,14 +1704,14 @@ const NotebookPanel = forwardRef(function NotebookPanel(
               onKeyDown={async (event) => {
                 if (event.key === "Enter" && answerInput.trim()) {
                   const correct = await onAnswerCheck(answerInput);
-                  if (correct) { setShowConfetti(true); setTimeout(() => setShowConfetti(false), 3200); setTimeout(() => onSave(true), 1500); }
+                  if (correct) { setShowConfetti(true); setTimeout(() => setShowConfetti(false), 3200); setTimeout(() => onSave(true, selectedProblem), 1500); }
                   else { setShaking(true); setTimeout(() => setShaking(false), 500); }
                 }
               }}
             />
             <button className="answer-confirm-btn" onClick={async () => {
               const correct = await onAnswerCheck(answerInput);
-              if (correct) { setShowConfetti(true); setTimeout(() => setShowConfetti(false), 3200); setTimeout(() => onSave(true), 1500); }
+              if (correct) { setShowConfetti(true); setTimeout(() => setShowConfetti(false), 3200); setTimeout(() => onSave(true, selectedProblem), 1500); }
               else { setShaking(true); setTimeout(() => setShaking(false), 500); }
             }} disabled={saving || !answerInput.trim()}>
               확인
@@ -1713,7 +1725,7 @@ const NotebookPanel = forwardRef(function NotebookPanel(
             <Save size={17} />
             풀이 저장
           </button>
-          <button className="primary" onClick={() => onSave(true)} disabled={saving || answerCheck?.status !== "correct"}>
+          <button className="primary" onClick={() => onSave(true, selectedProblem)} disabled={saving || answerCheck?.status !== "correct"}>
             <CheckCircle2 size={17} />
             해결 완료
           </button>

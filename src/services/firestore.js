@@ -119,6 +119,15 @@ export async function loadProgressForUser(uid) {
       result[data.nodeId] = data.solvedProblemIds;
     }
   }
+  const attemptsQuery = query(collection(db, "attempts"), where("uid", "==", uid), limit(500));
+  const attemptsSnap = await getDocs(attemptsQuery);
+  attemptsSnap.docs.forEach((d) => {
+    const data = d.data();
+    if (!data.completed || !data.nodeId || !data.problemId) return;
+    const solved = new Set(result[data.nodeId] || []);
+    solved.add(data.problemId);
+    result[data.nodeId] = Array.from(solved);
+  });
   return result;
 }
 
@@ -194,6 +203,8 @@ export async function saveAttempt({ user, problem, strokes, guide, isCorrect, st
     uid: user.uid,
     problemId: problem.id,
     nodeId: problem.nodeId,
+    problemTitle: problem.title || problem.id,
+    problemPrompt: problem.prompt || "",
     strokes,
     guide,
     isCorrect: completed && isCorrect,
