@@ -240,25 +240,36 @@ export default function App() {
     await refreshMembers(nextProfile);
   }
 
-  function trackHintUse(problemId) {
-    setHintUsed((current) => ({ ...current, [problemId]: (current[problemId] || 0) + 1 }));
+  function getGuidePenaltyCount(problemId) {
+    const used = hintUsed[problemId];
+    if (Array.isArray(used)) return used.length;
+    return Number(used) || 0;
+  }
+
+  function trackHintUse(problemId, actionKey) {
+    setHintUsed((current) => {
+      const previous = current[problemId];
+      const used = Array.isArray(previous) ? previous : [];
+      if (used.includes(actionKey)) return current;
+      return { ...current, [problemId]: [...used, actionKey] };
+    });
   }
 
   async function handleGuide(action) {
     if (action.key === "next") {
-      trackHintUse(selectedProblem.id);
+      trackHintUse(selectedProblem.id, action.key);
       setGuide(selectedProblem.nextStep || `## 다음 한 단계\n- ${selectedProblem.concept}`);
       return;
     }
 
     if (action.key === "hint") {
-      trackHintUse(selectedProblem.id);
+      trackHintUse(selectedProblem.id, action.key);
       setGuide(selectedProblem.hint || `## 힌트\n- ${selectedProblem.concept}`);
       return;
     }
 
     if (action.key === "concept") {
-      trackHintUse(selectedProblem.id);
+      trackHintUse(selectedProblem.id, action.key);
       setGuide(selectedProblem.conceptGuide || `## 개념 다시보기\n- ${selectedProblem.concept}`);
       return;
     }
@@ -272,11 +283,12 @@ export default function App() {
 
     const reviewKey = `${selectedProblem.id}`;
     const usedCount = reviewCounts[reviewKey] || 0;
-    if (usedCount >= 3) {
-      setGuide("## 내 풀이 점검 제한\n- 이 문제의 풀이 점검은 최대 3회까지 사용할 수 있습니다.\n- 힌트와 개념 다시보기를 참고해서 다시 정리해 보세요.");
+    if (usedCount >= 1) {
+      setGuide("## AI 가이드 사용 완료\n- AI 가이드는 문제당 1회만 사용할 수 있습니다.\n- 풀이 방향, 힌트, 개념 다시보기를 참고해서 다시 정리해 보세요.");
       return;
     }
 
+    setReviewCounts((current) => ({ ...current, [reviewKey]: 1 }));
     setGuideLoading(true);
     setGuide(`${action.label} 요청 중...`);
     try {
@@ -294,7 +306,6 @@ export default function App() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "OpenAI guide failed");
       setGuide(data.guide);
-      setReviewCounts((current) => ({ ...current, [reviewKey]: usedCount + 1 }));
     } catch (error) {
       setGuide(
         `가이드 API 연결 전 임시 안내입니다.\n\n${selectedProblem.concept}\n\n다음 단계: 문제에서 주어진 값과 구해야 할 값을 먼저 분리한 뒤, 가장 직접적인 공식이나 등식으로 옮겨 보세요.\n\n오류: ${error.message}`,
@@ -329,7 +340,7 @@ export default function App() {
     setSaving(true);
 
     const alreadySolved = (solvedBySkill[selectedSkillId] || []).includes(problem.id);
-    const hints = hintUsed[problem.id] || 0;
+    const hints = getGuidePenaltyCount(problem.id);
     const xpMultiplier = Math.max(0.3, 1 - hints * 0.05);
 
     if (completed) {
@@ -511,7 +522,7 @@ export default function App() {
           answerCheck={answerChecks[selectedProblem.id]}
           saving={saving}
           solvedCount={solvedBySkill[selectedSkillId]?.length || 0}
-          hintCount={hintUsed[selectedProblem?.id] || 0}
+          hintCount={getGuidePenaltyCount(selectedProblem?.id)}
           onAnswerCheck={handleAnswerCheck}
           onSave={handleSaveAttempt}
         />
@@ -782,6 +793,10 @@ const skillIcons = {
 };
 
 function SkillTree({ skills, selectedSkillId, completedSkills, solvedBySkill, unlockedSkills, onSelect }) {
+  const boardRef = useRef(null);
+  const nodeRefs = useRef(new Map());
+  const [skillLinks, setSkillLinks] = useState([]);
+  const [boardSize, setBoardSize] = useState({ width: 0, height: 0 });
   const stageOrder = ["중1", "중2", "중3", "고1", "고2", "고3"];
   const groupedSkills = stageOrder.map((stage) => ({
     stage,
@@ -790,18 +805,94 @@ function SkillTree({ skills, selectedSkillId, completedSkills, solvedBySkill, un
       .sort((a, b) => (a.lane ?? 0) - (b.lane ?? 0) || (a.level ?? 0) - (b.level ?? 0)),
   }));
 
+  useEffect(() => {
+    function updateLines() {
+      const board = boardRef.current;
+      if (!board) return;
+      const boardRect = board.getBoundingClientRect();
+      setBoardSize({ width: boardRect.width, height: boardRect.height });
+      const nextLinks = [];
+      for (const skill of skills) {
+        for (const prereqId of skill.prereq || []) {
+          const fromEl = nodeRefs.current.get(prereqId);
+          const toEl = nodeRefs.current.get(skill.id);
+          if (!fromEl || !toEl) continue;
+          const fromRect = fromEl.getBoundingClientRect();
+          const toRect = toEl.getBoundingClientRect();
+          const fromCenterX = fromRect.left + fromRect.width / 2;
+          const toCenterX = toRect.left + toRect.width / 2;
+          const sameColumn = Math.abs(fromCenterX - toCenterX) < Math.min(fromRect.width, toRect.width) * 0.6;
+          const fromIsAbove = fromRect.top < toRect.top;
+          const leftToRight = fromCenterX < toCenterX;
+          const from = sameColumn
+            ? {
+                x: fromCenterX - boardRect.left,
+                y: (fromIsAbove ? fromRect.bottom : fromRect.top) - boardRect.top,
+              }
+            : {
+                x: (leftToRight ? fromRect.right : fromRect.left) - boardRect.left,
+                y: fromRect.top + fromRect.height / 2 - boardRect.top,
+              };
+          const to = sameColumn
+            ? {
+                x: toCenterX - boardRect.left,
+                y: (fromIsAbove ? toRect.top : toRect.bottom) - boardRect.top,
+              }
+            : {
+                x: (leftToRight ? toRect.left : toRect.right) - boardRect.left,
+                y: toRect.top + toRect.height / 2 - boardRect.top,
+              };
+          const mid = sameColumn
+            ? { x: from.x, y: (from.y + to.y) / 2 }
+            : { x: (from.x + to.x) / 2, y: from.y };
+          const d = sameColumn
+            ? `M ${from.x} ${from.y} L ${from.x} ${to.y}`
+            : `M ${from.x} ${from.y} L ${mid.x} ${from.y} L ${mid.x} ${to.y} L ${to.x} ${to.y}`;
+          nextLinks.push({
+            id: `${prereqId}-${skill.id}`,
+            from,
+            to,
+            d,
+            completed: completedSkills.includes(prereqId),
+            unlocked: unlockedSkills.has(skill.id),
+            selected: selectedSkillId === skill.id || selectedSkillId === prereqId,
+          });
+        }
+      }
+      setSkillLinks(nextLinks);
+    }
+
+    updateLines();
+    window.addEventListener("resize", updateLines);
+    return () => window.removeEventListener("resize", updateLines);
+  }, [skills, selectedSkillId, completedSkills, unlockedSkills]);
+
   return (
     <section className="skill-panel">
       <div className="section-title">
         <Award size={18} />
         <h2>스킬 트리</h2>
       </div>
-      <div className="skill-board">
+      <div className="skill-board" ref={boardRef}>
+        <svg
+          className="skill-board-lines"
+          viewBox={`0 0 ${Math.max(1, boardSize.width)} ${Math.max(1, boardSize.height)}`}
+          aria-hidden="true"
+        >
+          {skillLinks.map((link) => {
+            return (
+              <path
+                key={link.id}
+                className={`skill-board-line ${link.completed && link.unlocked ? "active" : "locked"} ${link.selected ? "selected" : ""}`}
+                d={link.d}
+              />
+            );
+          })}
+        </svg>
         {groupedSkills.map((group) => {
           const stageClass = { "중1":"s-m1","중2":"s-m2","중3":"s-m3","고1":"s-h1","고2":"s-h2","고3":"s-h3" }[group.stage] || "";
           return (
           <div className={`skill-stage ${stageClass}`} key={group.stage}>
-            <div className="skill-stage-header">{group.stage}</div>
             <div className="skill-stage-list">
               {group.skills.map((skill, idx) => {
                 const completed = completedSkills.includes(skill.id);
@@ -811,15 +902,20 @@ function SkillTree({ skills, selectedSkillId, completedSkills, solvedBySkill, un
                 const solvedCount = solvedBySkill[skill.id]?.length || 0;
                 return (
                   <div className="skill-node-wrap" key={skill.id}>
-                    {idx > 0 && <div className="skill-link" />}
                     <button
                       className={`skill-node ${selected ? "selected" : ""} ${completed ? "completed" : ""} ${pending ? "pending" : ""} ${!unlocked ? "locked" : ""}`}
+                      style={{ marginLeft: `${((idx % 3) - 1) * 8}px`, width: `calc(100% - ${idx % 2 ? 10 : 0}px)` }}
                       disabled={!unlocked}
                       onClick={() => onSelect(skill.id)}
                       title={skill.title}
+                      ref={(element) => {
+                        if (element) nodeRefs.current.set(skill.id, element);
+                        else nodeRefs.current.delete(skill.id);
+                      }}
                     >
                       <span className="skill-icon">{skillIcons[skill.id] || "∘"}</span>
                       <strong>{skill.title}</strong>
+                      <span className="skill-grade-badge">{skill.stage}</span>
                                             {completed && !selected && <em className="done">✓</em>}
                     </button>
                   </div>
@@ -853,15 +949,12 @@ function Leaderboard({ leaders, currentUid, profile }) {
         <div className="my-stats-row">
           <div className="my-stat">
             <span>{xp.toLocaleString()}</span>
-            <label>XP</label>
           </div>
           <div className="my-stat">
             <span>{solved}</span>
-            <label>문제 해결</label>
           </div>
           <div className="my-stat">
             <span>{myRank > 0 ? `#${myRank}` : "-"}</span>
-            <label>순위</label>
           </div>
         </div>
         <div className="xp-bar-wrap">
@@ -883,7 +976,6 @@ function Leaderboard({ leaders, currentUid, profile }) {
             )}
             <div>
               <strong>{formatStudentName(leader)}</strong>
-              <small>{leader.solvedCount || 0}문제 해결</small>
             </div>
             <b>{leader.xp || 0} XP</b>
           </li>
@@ -1795,12 +1887,11 @@ function GuidePanel({ problem, guide, guideLoading, reviewCount, answerCheck, is
         {guideActions.map((action) => {
           const Icon = action.icon;
           const isCheck = action.key === "check";
-          const disabled = guideLoading || (isCheck ? !canReview : false);
+          const disabled = guideLoading || (isCheck ? !canReview || reviewCount >= 1 : false);
           return (
             <button key={action.key} onClick={() => onGuide(action)} disabled={disabled}>
               <Icon size={17} />
-              {action.label}
-              {isCheck && <small>{Math.max(0, 3 - reviewCount)}/3</small>}
+              <span>{action.label}</span>
               {action.xpPenalty && <small>XP -5%</small>}
             </button>
           );
