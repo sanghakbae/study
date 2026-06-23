@@ -15,14 +15,17 @@ import {
   Loader2,
   Lock,
   LogOut,
+  Mail,
   Medal,
   MousePointer2,
   PenLine,
+  Printer,
   RefreshCw,
   Save,
   Search,
   ShieldCheck,
   Sparkles,
+  ScrollText,
   Trophy,
   TrendingUp,
   UserRound,
@@ -34,6 +37,7 @@ import { auth, googleProvider } from "./firebase";
 import {
   completeOnboarding,
   ensureUserProfile,
+  loadAiUsageLogsForUsers,
   loadAttemptsForUsers,
   loadLeaderboard,
   loadProblemsBySkill,
@@ -41,6 +45,7 @@ import {
   loadSkills,
   loadUserProfile,
   loadUsers,
+  saveAiUsageLog,
   saveAttempt,
   seedCatalogIfNeeded,
   updateUserRole,
@@ -79,6 +84,7 @@ export default function App() {
   const [leaderboard, setLeaderboard] = useState([]);
   const [members, setMembers] = useState([]);
   const [activityAttempts, setActivityAttempts] = useState([]);
+  const [aiUsageLogs, setAiUsageLogs] = useState([]);
   const [guide, setGuide] = useState("문제를 고르고 노트에 풀이를 시작하세요. 막히는 순간 오른쪽 버튼으로 힌트를 받을 수 있습니다.");
   const [guideLoading, setGuideLoading] = useState(false);
   const [pendingRole, setPendingRole] = useState(null);
@@ -192,6 +198,7 @@ export default function App() {
     if (!user || !["admin", "parents"].includes(nextProfile.role)) {
       setMembers([]);
       setActivityAttempts([]);
+      setAiUsageLogs([]);
       return;
     }
 
@@ -201,8 +208,12 @@ export default function App() {
       nextProfile.role === "admin"
         ? loadedUsers.filter((item) => item.role === "student").map((item) => item.uid)
         : nextProfile.parentOf || [];
-    const attempts = await loadAttemptsForUsers(targetUserIds);
+    const [attempts, usageLogs] = await Promise.all([
+      loadAttemptsForUsers(targetUserIds),
+      loadAiUsageLogsForUsers(targetUserIds),
+    ]);
     setActivityAttempts(attempts);
+    setAiUsageLogs(usageLogs);
   }
 
   useEffect(() => {
@@ -306,6 +317,15 @@ export default function App() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "OpenAI guide failed");
+      if (data.usage) {
+        await saveAiUsageLog({
+          user,
+          problem: selectedProblem,
+          action: action.label,
+          usage: data.usage,
+          model: data.model,
+        });
+      }
       setGuide(data.guide);
     } catch (error) {
       setGuide(
@@ -465,6 +485,7 @@ export default function App() {
         leaders={leaderboard}
         members={members}
         attempts={activityAttempts}
+        aiUsageLogs={aiUsageLogs}
         onRoleUpdate={async (payload) => {
           await updateUserRole(payload);
           await refreshMembers();
@@ -568,7 +589,7 @@ export default function App() {
   );
 }
 
-function AdminPage({ user, profile, members, attempts, onRoleUpdate }) {
+function AdminPage({ user, profile, members, attempts, aiUsageLogs, onRoleUpdate }) {
   const [activeMenu, setActiveMenu] = useState("stats");
 
   return (
@@ -584,6 +605,14 @@ function AdminPage({ user, profile, members, attempts, onRoleUpdate }) {
             <TrendingUp size={16} />
             학습 통계
           </button>
+          <button className={activeMenu === "audit" ? "active" : ""} onClick={() => setActiveMenu("audit")}>
+            <ScrollText size={16} />
+            감사 로그
+          </button>
+          <button className={activeMenu === "ai" ? "active" : ""} onClick={() => setActiveMenu("ai")}>
+            <Wand2 size={16} />
+            AI 사용량
+          </button>
         </aside>
         {activeMenu === "members" ? (
           <section className="admin-panel">
@@ -593,6 +622,10 @@ function AdminPage({ user, profile, members, attempts, onRoleUpdate }) {
             </div>
             <MemberManager members={members} onRoleUpdate={onRoleUpdate} />
           </section>
+        ) : activeMenu === "audit" ? (
+          <AdminAuditLog members={members} attempts={attempts} />
+        ) : activeMenu === "ai" ? (
+          <AdminAiUsage members={members} usageLogs={aiUsageLogs} />
         ) : (
           <AdminLearningDashboard members={members} attempts={attempts} />
         )}
@@ -1114,85 +1147,296 @@ function MemberManager({ members, onRoleUpdate }) {
 }
 
 function AdminLearningDashboard({ members, attempts }) {
+  const [selectedStudentId, setSelectedStudentId] = useState("");
   const students = members.filter((member) => member.role === "student");
-  const completedAttempts = attempts.filter((attempt) => attempt.completed);
-  const wrongAttempts = attempts.filter((attempt) => attempt.status === "wrong" || attempt.wrong);
-  const helpedAttempts = attempts.filter((attempt) => getHelpUsed(attempt).length);
-  const totalSolved = students.reduce((sum, student) => sum + (Number(student.solvedCount) || 0), 0);
-  const avgSolved = students.length ? Math.round(totalSolved / students.length) : 0;
+  const selectedStudent = students.find((student) => student.uid === selectedStudentId);
+  const scopedStudents = selectedStudent ? [selectedStudent] : students;
+  const scopedAttempts = selectedStudent ? attempts.filter((attempt) => attempt.uid === selectedStudent.uid) : attempts;
+  const completedAttempts = scopedAttempts.filter((attempt) => attempt.completed);
+  const wrongAttempts = scopedAttempts.filter((attempt) => attempt.status === "wrong" || attempt.wrong);
+  const helpedAttempts = scopedAttempts.filter((attempt) => getHelpUsed(attempt).length);
+  const totalSolved = scopedStudents.reduce((sum, student) => sum + (Number(student.solvedCount) || 0), 0);
+  const avgSolved = scopedStudents.length ? Math.round(totalSolved / scopedStudents.length) : 0;
   const accuracy = completedAttempts.length + wrongAttempts.length
     ? Math.round((completedAttempts.length / (completedAttempts.length + wrongAttempts.length)) * 100)
     : 0;
 
-  const skillStatus = buildSkillStatusChart(completedAttempts, students);
-  const skillSolved = groupAttemptsForChart(completedAttempts, (attempt) => getSkillTitle(attempt.nodeId)).slice(0, 8);
-  const skillWrong = groupAttemptsForChart(wrongAttempts, (attempt) => getSkillTitle(attempt.nodeId)).slice(0, 8);
-  const skillHelp = buildSkillHelpChart(helpedAttempts);
-  const recentTrend = buildRecentTrendChart(attempts);
-  const recentAttempts = attempts.slice(0, 18);
+  const skillStatus = buildSkillStatusChart(completedAttempts, scopedStudents);
+  const skillSolved = buildTopSkillMetricChart(completedAttempts, undefined, 5);
+  const skillWrong = buildTopSkillMetricChart(wrongAttempts, undefined, 5);
+  const skillHelp = buildTopSkillMetricChart(helpedAttempts, (attempt) => getHelpUsed(attempt).length, 5);
+  const recentTrend = buildRecentTrendChart(scopedAttempts);
+  const parentEmails = selectedStudent ? getParentEmailsForStudent(selectedStudent.uid, members) : [];
+  const reportSubject = selectedStudent ? `[Study Math Arena] ${selectedStudent.displayName || "학생"} 학습 리포트` : "[Study Math Arena] 전체 학습 리포트";
+  const reportBody = buildLearningReportText({
+    student: selectedStudent,
+    totalSolved,
+    avgSolved,
+    accuracy,
+    skillStatus,
+    skillSolved,
+    skillWrong,
+    skillHelp,
+  });
 
   return (
     <section className="admin-dashboard">
-      <div className="section-title">
-        <TrendingUp size={18} />
-        <h2>학습 통계</h2>
+      <div className="admin-dashboard-head">
+        <div className="section-title">
+          <TrendingUp size={18} />
+          <h2>학습 통계</h2>
+        </div>
+        <div className="admin-dashboard-actions">
+          <select value={selectedStudentId} onChange={(event) => setSelectedStudentId(event.target.value)} aria-label="학생 조회">
+            <option value="">전체 학생</option>
+            {students.map((student) => (
+              <option value={student.uid} key={student.uid}>
+                {student.displayName || student.email}
+              </option>
+            ))}
+          </select>
+          <button onClick={() => window.print()}>
+            <Printer size={14} />
+            리포트 출력
+          </button>
+          <a
+            className={!selectedStudent || !parentEmails.length ? "disabled" : ""}
+            href={selectedStudent && parentEmails.length ? `mailto:${parentEmails.join(",")}?subject=${encodeURIComponent(reportSubject)}&body=${encodeURIComponent(reportBody)}` : undefined}
+            aria-disabled={!selectedStudent || !parentEmails.length}
+          >
+            <Mail size={14} />
+            부모에게 발송
+          </a>
+        </div>
       </div>
       <div className="admin-summary-grid">
-        <StatCard label="전체 학생" value={`${students.length}명`} />
+        <StatCard label={selectedStudent ? "조회 학생" : "전체 학생"} value={selectedStudent ? selectedStudent.displayName || "학생" : `${students.length}명`} />
         <StatCard label="해결 문제" value={`${totalSolved}개`} />
         <StatCard label="평균 해결" value={`${avgSolved}개`} />
         <StatCard label="정답률" value={`${accuracy}%`} />
       </div>
       <div className="admin-chart-grid">
         <DonutChartCard title="전체 스킬 완료 현황" items={skillStatus} centerLabel="완료" />
-        <RadarChartCard title="스킬별 해결 레이더" items={skillSolved} tone="teal" />
-        <RadarChartCard title="스킬별 오답 레이더" items={skillWrong} tone="amber" />
-        <RadarChartCard title="스킬별 도움 레이더" items={skillHelp} tone="slate" />
+        <DonutChartCard title="스킬별 해결 수" items={skillSolved} centerLabel="해결" />
+        <DonutChartCard title="스킬별 오답 수" items={skillWrong} centerLabel="오답" />
+        <DonutChartCard title="스킬별 도움 사용량" items={skillHelp} centerLabel="도움" />
       </div>
       <div className="admin-wide-chart">
         <ColumnChartCard title="최근 7일 학습 흐름" items={recentTrend} />
       </div>
-      <div className="admin-records-panel">
-        <h3>최근 학습 기록</h3>
-        {recentAttempts.length ? (
-          <div className="activity-table-wrap">
-            <table className="activity-table admin-activity-table">
-              <thead>
-                <tr>
-                  <th className="col-date">날짜</th>
-                  <th className="col-child">학생</th>
-                  <th className="col-category">구분</th>
-                  <th className="col-problem">문제</th>
-                  <th className="col-answer">입력 답</th>
-                  <th className="col-status">결과</th>
-                  <th className="col-help">사용한 도움</th>
+    </section>
+  );
+}
+
+function AdminAuditLog({ members, attempts }) {
+  const [query, setQuery] = useState("");
+  const rows = attempts.map((attempt) => {
+    const member = members.find((item) => item.uid === attempt.uid);
+    const problemText = getProblemText(attempt);
+    return {
+      id: attempt.id,
+      date: formatAttemptDate(attempt),
+      student: member ? formatAdminMemberName(member, members) : "학생",
+      category: problemText.category,
+      problem: problemText.prompt || `${attempt.nodeId} · ${attempt.problemId}`,
+      answer: getSubmittedAnswer(attempt) || "-",
+      result: getAttemptResult(attempt),
+      resultClass: getAttemptResultClass(attempt),
+      help: formatHelpUsed(attempt),
+    };
+  });
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredRows = normalizedQuery
+    ? rows.filter((row) => Object.values(row).join(" ").toLowerCase().includes(normalizedQuery))
+    : rows;
+
+  return (
+    <section className="admin-dashboard">
+      <div className="admin-dashboard-head">
+        <div className="section-title">
+          <ScrollText size={18} />
+          <h2>감사 로그</h2>
+        </div>
+        <div className="admin-search-box">
+          <Search size={14} />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="학생, 문제, 결과 검색" />
+        </div>
+      </div>
+      <div className="admin-records-panel audit-log-panel">
+        <div className="activity-table-wrap">
+          <table className="activity-table admin-activity-table">
+            <thead>
+              <tr>
+                <th className="col-date">날짜</th>
+                <th className="col-child">학생</th>
+                <th className="col-category">구분</th>
+                <th className="col-problem">문제</th>
+                <th className="col-answer">입력 답</th>
+                <th className="col-status">결과</th>
+                <th className="col-help">사용한 도움</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredRows.map((row) => (
+                <tr key={row.id}>
+                  <td className="col-date">{row.date}</td>
+                  <td className="col-child">{row.student}</td>
+                  <td className="col-category">{row.category}</td>
+                  <td className="col-problem">{row.problem}</td>
+                  <td className="col-answer">{row.answer}</td>
+                  <td className="col-status"><strong className={row.resultClass}>{row.result}</strong></td>
+                  <td className="col-help">{row.help}</td>
                 </tr>
-              </thead>
-              <tbody>
-                {recentAttempts.map((attempt) => {
-                  const member = members.find((item) => item.uid === attempt.uid);
-                  const problemText = getProblemText(attempt);
-                  return (
-                    <tr key={attempt.id}>
-                      <td className="col-date">{formatAttemptDate(attempt)}</td>
-                      <td className="col-child">{member ? formatAdminMemberName(member, members) : "학생"}</td>
-                      <td className="col-category">{problemText.category}</td>
-                      <td className="col-problem">{problemText.prompt || `${attempt.nodeId} · ${attempt.problemId}`}</td>
-                      <td className="col-answer">{getSubmittedAnswer(attempt) || "-"}</td>
-                      <td className="col-status"><strong className={getAttemptResultClass(attempt)}>{getAttemptResult(attempt)}</strong></td>
-                      <td className="col-help">{formatHelpUsed(attempt)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <p>아직 저장된 학습 기록이 없습니다.</p>
-        )}
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {!filteredRows.length && <p>검색 결과가 없습니다.</p>}
       </div>
     </section>
   );
+}
+
+function AdminAiUsage({ members, usageLogs }) {
+  const [query, setQuery] = useState("");
+  const rows = usageLogs.map((log) => {
+    const member = members.find((item) => item.uid === log.uid);
+    return {
+      id: log.id,
+      date: formatLogDate(log),
+      student: member ? formatAdminMemberName(member, members) : log.uid || "학생",
+      skill: getSkillTitle(log.nodeId),
+      action: log.action || "AI 가이드",
+      model: log.model || "-",
+      inputTokens: Number(log.inputTokens) || 0,
+      outputTokens: Number(log.outputTokens) || 0,
+      totalTokens: Number(log.totalTokens) || 0,
+    };
+  });
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredRows = normalizedQuery
+    ? rows.filter((row) => Object.values(row).join(" ").toLowerCase().includes(normalizedQuery))
+    : rows;
+  const totals = rows.reduce(
+    (sum, row) => ({
+      requests: sum.requests + 1,
+      inputTokens: sum.inputTokens + row.inputTokens,
+      outputTokens: sum.outputTokens + row.outputTokens,
+      totalTokens: sum.totalTokens + row.totalTokens,
+    }),
+    { requests: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+  );
+  const byStudent = groupRowsForTokenChart(rows, (row) => row.student).slice(0, 5);
+  const byAction = groupRowsForTokenChart(rows, (row) => row.action).slice(0, 5);
+
+  return (
+    <section className="admin-dashboard">
+      <div className="admin-dashboard-head">
+        <div className="section-title">
+          <Wand2 size={18} />
+          <h2>AI 사용량</h2>
+        </div>
+        <div className="admin-search-box">
+          <Search size={14} />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="학생, 스킬, 모델 검색" />
+        </div>
+      </div>
+      <div className="admin-summary-grid">
+        <StatCard label="AI 요청" value={`${totals.requests}회`} />
+        <StatCard label="입력 토큰" value={totals.inputTokens.toLocaleString()} />
+        <StatCard label="출력 토큰" value={totals.outputTokens.toLocaleString()} />
+        <StatCard label="전체 토큰" value={totals.totalTokens.toLocaleString()} />
+      </div>
+      <div className="admin-chart-grid compact">
+        <DonutChartCard title="학생별 토큰 TOP 5" items={byStudent} centerLabel="토큰" />
+        <DonutChartCard title="액션별 토큰 TOP 5" items={byAction} centerLabel="토큰" />
+      </div>
+      <div className="admin-records-panel audit-log-panel">
+        <h3>AI 사용 로그</h3>
+        <div className="activity-table-wrap">
+          <table className="activity-table admin-activity-table">
+            <thead>
+              <tr>
+                <th className="col-date">날짜</th>
+                <th className="col-child">학생</th>
+                <th className="col-category">스킬</th>
+                <th className="col-status">액션</th>
+                <th className="col-help">모델</th>
+                <th className="col-answer">입력</th>
+                <th className="col-answer">출력</th>
+                <th className="col-answer">전체</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredRows.map((row) => (
+                <tr key={row.id}>
+                  <td className="col-date">{row.date}</td>
+                  <td className="col-child">{row.student}</td>
+                  <td className="col-category">{row.skill}</td>
+                  <td className="col-status">{row.action}</td>
+                  <td className="col-help">{row.model}</td>
+                  <td className="col-answer">{row.inputTokens.toLocaleString()}</td>
+                  <td className="col-answer">{row.outputTokens.toLocaleString()}</td>
+                  <td className="col-answer"><strong>{row.totalTokens.toLocaleString()}</strong></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {!filteredRows.length && <p>AI 사용량 로그가 없습니다. 새 AI 점검부터 토큰 사용량이 저장됩니다.</p>}
+      </div>
+    </section>
+  );
+}
+
+function groupRowsForTokenChart(rows, labelFn) {
+  const grouped = new Map();
+  for (const row of rows) {
+    const label = labelFn(row) || "기타";
+    grouped.set(label, (grouped.get(label) || 0) + row.totalTokens);
+  }
+  return Array.from(grouped, ([label, value]) => ({ label, value }))
+    .filter((item) => item.value > 0)
+    .sort((a, b) => b.value - a.value);
+}
+
+function formatLogDate(log) {
+  const source = log.createdAt;
+  if (!source) return "-";
+  const time = typeof source.seconds === "number" ? source.seconds * 1000 : new Date(source).getTime();
+  if (!time) return "-";
+  return new Intl.DateTimeFormat("ko-KR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(time));
+}
+
+function getParentEmailsForStudent(studentUid, members) {
+  return members
+    .filter((member) => (member.role || "student") === "parents" && (member.parentOf || []).includes(studentUid))
+    .map((member) => member.email)
+    .filter(Boolean);
+}
+
+function buildLearningReportText({ student, totalSolved, avgSolved, accuracy, skillStatus, skillSolved, skillWrong, skillHelp }) {
+  const target = student ? `${student.displayName || "학생"} (${student.grade || "학년 미설정"})` : "전체 학생";
+  const lines = [
+    `학습 리포트: ${target}`,
+    "",
+    `해결 문제: ${totalSolved}개`,
+    `평균 해결: ${avgSolved}개`,
+    `정답률: ${accuracy}%`,
+    "",
+    "[전체 스킬 완료 현황]",
+    ...skillStatus.map((item) => `- ${item.label}: ${item.value}`),
+    "",
+    "[스킬별 해결 수 TOP 5]",
+    ...(skillSolved.length ? skillSolved.map((item) => `- ${item.label}: ${item.value}`) : ["- 데이터 없음"]),
+    "",
+    "[스킬별 오답 수 TOP 5]",
+    ...(skillWrong.length ? skillWrong.map((item) => `- ${item.label}: ${item.value}`) : ["- 데이터 없음"]),
+    "",
+    "[스킬별 도움 사용량 TOP 5]",
+    ...(skillHelp.length ? skillHelp.map((item) => `- ${item.label}: ${item.value}`) : ["- 데이터 없음"]),
+  ];
+  return lines.join("\n");
 }
 
 function StatCard({ label, value }) {
@@ -1269,7 +1513,11 @@ function DonutChartCard({ title, items, centerLabel }) {
 }
 
 function RadarChartCard({ title, items, tone }) {
-  const chartItems = items.slice(0, 8);
+  const chartItems = items.length ? items.slice(0, 8) : [
+    { label: "데이터 없음", value: 0 },
+    { label: "기록 없음", value: 0 },
+    { label: "미집계", value: 0 },
+  ];
   const max = Math.max(1, ...chartItems.map((item) => item.value));
   const center = 82;
   const radius = 56;
@@ -1296,41 +1544,37 @@ function RadarChartCard({ title, items, tone }) {
   return (
     <div className={`admin-chart-card admin-radar-card ${tone}`}>
       <h3>{title}</h3>
-      {chartItems.length >= 3 ? (
-        <div className="admin-radar-layout">
-          <svg viewBox="0 0 164 164" role="img" aria-label={title}>
-            {[0.33, 0.66, 1].map((scale) => (
-              <polygon
-                key={scale}
-                className="radar-grid"
-                points={chartItems.map((_, index) => {
-                  const point = pointFor(index, radius * scale);
-                  return `${point.x},${point.y}`;
-                }).join(" ")}
-              />
-            ))}
-            {chartItems.map((_, index) => {
-              const point = pointFor(index, radius);
-              return <line className="radar-axis" key={index} x1={center} y1={center} x2={point.x} y2={point.y} />;
-            })}
-            <polygon className="radar-area" points={polygon} style={{ fill: color, stroke: color }} />
-            {chartItems.map((item, index) => {
-              const point = pointFor(index, radius * (item.value / max));
-              return <circle className="radar-point" key={item.label} cx={point.x} cy={point.y} r="2.8" style={{ fill: color }} />;
-            })}
-          </svg>
-          <div className="admin-radar-legend">
-            {chartItems.map((item) => (
-              <div key={item.label}>
-                <span>{item.label}</span>
-                <b>{item.value}</b>
-              </div>
-            ))}
-          </div>
+      <div className="admin-radar-layout">
+        <svg viewBox="0 0 164 164" role="img" aria-label={title}>
+          {[0.33, 0.66, 1].map((scale) => (
+            <polygon
+              key={scale}
+              className="radar-grid"
+              points={chartItems.map((_, index) => {
+                const point = pointFor(index, radius * scale);
+                return `${point.x},${point.y}`;
+              }).join(" ")}
+            />
+          ))}
+          {chartItems.map((_, index) => {
+            const point = pointFor(index, radius);
+            return <line className="radar-axis" key={index} x1={center} y1={center} x2={point.x} y2={point.y} />;
+          })}
+          <polygon className="radar-area" points={polygon} style={{ fill: color, stroke: color }} />
+          {chartItems.map((item, index) => {
+            const point = pointFor(index, radius * (item.value / max));
+            return <circle className="radar-point" key={item.label} cx={point.x} cy={point.y} r="2.8" style={{ fill: color }} />;
+          })}
+        </svg>
+        <div className="admin-radar-legend">
+          {chartItems.map((item) => (
+            <div key={item.label}>
+              <span>{item.label}</span>
+              <b>{item.value}</b>
+            </div>
+          ))}
         </div>
-      ) : (
-        <p>레이더 차트는 스킬 데이터가 3개 이상일 때 표시됩니다.</p>
-      )}
+      </div>
     </div>
   );
 }
@@ -1397,13 +1641,18 @@ function buildSkillStatusChart(completedAttempts, students) {
   ];
 }
 
-function buildSkillHelpChart(attempts) {
+function buildTopSkillMetricChart(attempts, weightFn = () => 1, limit = 5) {
   const grouped = new Map();
   for (const attempt of attempts) {
-    const label = getSkillTitle(attempt.nodeId);
-    grouped.set(label, (grouped.get(label) || 0) + getHelpUsed(attempt).length);
+    grouped.set(attempt.nodeId, (grouped.get(attempt.nodeId) || 0) + weightFn(attempt));
   }
-  return Array.from(grouped, ([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
+  return Array.from(grouped, ([nodeId, value]) => ({
+    label: getSkillTitle(nodeId),
+    value,
+  }))
+    .filter((item) => item.value > 0)
+    .sort((a, b) => b.value - a.value)
+    .slice(0, limit);
 }
 
 function buildRecentTrendChart(attempts) {

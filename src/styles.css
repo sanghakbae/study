@@ -205,8 +205,17 @@ button:disabled {
   width: min(92vw, 460px);
 }
 
+.manager-login-panel h1 {
+  font-size: clamp(1.8rem, 3.2vw, 2.35rem);
+  line-height: 1.08;
+}
+
 .manager-google-button {
   min-width: 168px;
+  height: 38px;
+  min-height: 38px;
+  padding: 0 18px;
+  font-size: 0.9rem;
 }
 
 .login-panel .manager-warning {
@@ -405,6 +414,72 @@ button:disabled {
   box-shadow: 0 16px 42px rgba(15, 23, 42, 0.08);
 }
 
+.admin-dashboard-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.admin-dashboard-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.admin-dashboard-actions select,
+.admin-dashboard-actions button,
+.admin-dashboard-actions a,
+.admin-search-box input {
+  height: 34px;
+  border: 1px solid #cbd5e1;
+  border-radius: 5px;
+  background: #fff;
+  color: #111827;
+  padding: 0 10px;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.admin-dashboard-actions select {
+  min-width: 150px;
+}
+
+.admin-dashboard-actions button,
+.admin-dashboard-actions a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  text-decoration: none;
+}
+
+.admin-dashboard-actions a.disabled {
+  pointer-events: none;
+  opacity: 0.45;
+}
+
+.admin-search-box {
+  min-width: 240px;
+  position: relative;
+}
+
+.admin-search-box svg {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #64748b;
+}
+
+.admin-search-box input {
+  width: 100%;
+  padding-left: 30px;
+}
+
 .admin-summary-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -440,6 +515,11 @@ button:disabled {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+}
+
+.admin-chart-grid.compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: 10px;
 }
 
 .admin-chart-card,
@@ -522,14 +602,15 @@ button:disabled {
 .admin-donut-layout {
   height: 188px;
   display: grid;
-  grid-template-columns: 150px minmax(0, 1fr);
+  grid-template-rows: 120px minmax(0, 1fr);
+  justify-items: center;
   align-items: center;
-  gap: 18px;
+  gap: 8px;
 }
 
 .admin-donut {
-  width: 150px;
-  height: 150px;
+  width: 118px;
+  height: 118px;
   display: grid;
   place-items: center;
   border-radius: 50%;
@@ -537,8 +618,8 @@ button:disabled {
 }
 
 .admin-donut > div {
-  width: 92px;
-  height: 92px;
+  width: 72px;
+  height: 72px;
   display: grid;
   place-items: center;
   align-content: center;
@@ -549,7 +630,7 @@ button:disabled {
 
 .admin-donut strong {
   color: #111827;
-  font-size: 1.7rem;
+  font-size: 1.35rem;
   line-height: 1;
   font-weight: 950;
 }
@@ -561,29 +642,34 @@ button:disabled {
 }
 
 .admin-donut-legend {
-  display: grid;
-  gap: 8px;
-  max-height: 150px;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-content: flex-start;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  max-height: 52px;
   overflow: auto;
 }
 
 .admin-donut-legend div {
-  display: grid;
-  grid-template-columns: 10px minmax(0, 1fr) auto;
+  display: inline-grid;
+  grid-template-columns: 8px auto auto;
   align-items: center;
-  gap: 8px;
+  gap: 5px;
   color: #334155;
-  font-size: 0.8rem;
+  font-size: 0.7rem;
   font-weight: 900;
 }
 
 .admin-donut-legend i {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
 }
 
 .admin-donut-legend span {
+  max-width: 84px;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -714,7 +800,8 @@ button:disabled {
 
 .admin-activity-table {
   table-layout: auto;
-  min-width: max-content;
+  width: max-content;
+  min-width: 0;
 }
 
 .admin-activity-table th,
@@ -2646,17 +2733,17 @@ li:nth-child(3) .rank-num { color: #b45309; }
   }
 
   .admin-donut-layout {
-    grid-template-columns: 130px minmax(0, 1fr);
+    grid-template-rows: 112px minmax(0, 1fr);
   }
 
   .admin-donut {
-    width: 130px;
-    height: 130px;
+    width: 110px;
+    height: 110px;
   }
 
   .admin-donut > div {
-    width: 80px;
-    height: 80px;
+    width: 68px;
+    height: 68px;
   }
 
   .admin-radar-layout {
@@ -2761,6 +2848,23 @@ li:nth-child(3) .rank-num { color: #b45309; }
   .admin-sidebar button {
     flex: 1;
     justify-content: center;
+  }
+
+  .admin-dashboard-head,
+  .admin-dashboard-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .admin-dashboard-actions,
+  .admin-search-box {
+    width: 100%;
+  }
+
+  .admin-dashboard-actions select,
+  .admin-dashboard-actions button,
+  .admin-dashboard-actions a {
+    width: 100%;
   }
 
   .admin-summary-grid {

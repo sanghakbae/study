@@ -31,10 +31,19 @@ export async function onRequestPost(context) {
         data.output_text ||
         data.output?.flatMap((item) => item.content || []).map((item) => item.text).filter(Boolean).join("\n") ||
         "풀이 방향을 만들지 못했습니다.",
+      usage: normalizeUsage(data.usage),
+      model: data.model || cleanEnv(context.env.OPENAI_MODEL) || "gpt-5.5",
     });
   } catch (error) {
     return json({ error: error.message }, 500);
   }
+}
+
+function normalizeUsage(usage = {}) {
+  const inputTokens = usage.input_tokens || usage.prompt_tokens || 0;
+  const outputTokens = usage.output_tokens || usage.completion_tokens || 0;
+  const totalTokens = usage.total_tokens || inputTokens + outputTokens;
+  return { inputTokens, outputTokens, totalTokens };
 }
 
 function cleanEnv(value) {

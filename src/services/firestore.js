@@ -193,6 +193,38 @@ export async function loadAttemptsForUsers(userIds) {
   return results.sort((a, b) => Number(b.completedAt?.seconds || b.createdAt?.seconds || 0) - Number(a.completedAt?.seconds || a.createdAt?.seconds || 0));
 }
 
+export async function loadAiUsageLogsForUsers(userIds) {
+  if (!userIds.length) return [];
+  const chunks = [];
+  for (let index = 0; index < userIds.length; index += 10) {
+    chunks.push(userIds.slice(index, index + 10));
+  }
+  const results = [];
+  for (const chunk of chunks) {
+    const q = query(collection(db, "aiUsageLogs"), where("uid", "in", chunk), limit(500));
+    const snap = await getDocs(q);
+    results.push(...snap.docs.map((item) => ({ id: item.id, ...item.data() })));
+  }
+  return results.sort((a, b) => Number(b.createdAt?.seconds || 0) - Number(a.createdAt?.seconds || 0));
+}
+
+export async function saveAiUsageLog({ user, problem, action, usage, model }) {
+  if (!usage) return;
+  const usageRef = doc(collection(db, "aiUsageLogs"));
+  await setDoc(usageRef, {
+    uid: user.uid,
+    problemId: problem?.id || "",
+    nodeId: problem?.nodeId || "",
+    problemTitle: problem?.title || "",
+    action,
+    model: model || "",
+    inputTokens: Number(usage.inputTokens) || 0,
+    outputTokens: Number(usage.outputTokens) || 0,
+    totalTokens: Number(usage.totalTokens) || 0,
+    createdAt: serverTimestamp(),
+  });
+}
+
 export async function saveAttempt({ user, problem, strokes, guide, isCorrect, status, alreadySolved, xpMultiplier = 1, submittedAnswer = "", helpUsed = [] }) {
   const attemptRef = doc(collection(db, "attempts"));
   const completed = status === "completed";

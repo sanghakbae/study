@@ -49,6 +49,12 @@ service cloud.firestore {
       allow create: if signedIn() && request.resource.data.uid == request.auth.uid;
     }
 
+    match /aiUsageLogs/{logId} {
+      allow read: if signedIn()
+        && (resource.data.uid == request.auth.uid || isAdmin() || isParentOf(resource.data.uid));
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid;
+    }
+
     match /progress/{progressId} {
       allow read: if signedIn()
         && (resource.data.uid == request.auth.uid || isAdmin() || isParentOf(resource.data.uid));
