@@ -3685,9 +3685,6 @@ li:nth-child(3) .rank-num { color: #b45309; }
   html:has(.login-screen),
   body:has(.login-screen),
   #root:has(.login-screen),
-  html:has(.app-shell),
-  body:has(.app-shell),
-  #root:has(.app-shell),
   html:has(.parent-shell),
   body:has(.parent-shell),
   #root:has(.parent-shell) {
@@ -3697,30 +3694,32 @@ li:nth-child(3) .rank-num { color: #b45309; }
     overflow-y: auto !important;
   }
 
-  .app-shell {
-    height: auto;
-    min-height: 100vh;
-    overflow: visible;
-    grid-template-rows: auto auto auto;
-  }
-
-  .workspace {
-    min-height: auto;
-    overflow: visible;
-  }
-
-  .notebook-panel,
-  .guide-panel {
-    min-height: auto;
-    overflow: visible;
-  }
-
   .login-screen {
     height: auto;
     min-height: 100vh;
     min-height: 100svh;
     min-height: 100dvh;
     overflow: visible;
+  }
+
+  .app-shell:not(.parent-shell) {
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+    grid-template-rows: auto auto minmax(0, 1fr);
+  }
+
+  .app-shell:not(.parent-shell) .workspace {
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .app-shell:not(.parent-shell) .notebook-panel,
+  .app-shell:not(.parent-shell) .guide-panel {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
 
   .parent-shell {
