@@ -1808,22 +1808,6 @@ button:disabled {
   margin-bottom: 0;
 }
 
-.solved-toggle {
-  white-space: nowrap;
-  padding: 0 10px;
-  border-radius: 5px;
-  border: 1px solid #e2e8f0;
-  background: #f1f5f9;
-  color: #475569;
-  font-size: 0.78rem;
-  font-weight: 700;
-}
-
-.solved-toggle.active {
-  background: linear-gradient(135deg, #0d9488, #0f766e);
-  border-color: transparent;
-  color: #fff;
-}
 
 .problem-card-meta span:first-child {
   color: #fbbf24;
@@ -2738,7 +2722,14 @@ li:nth-child(3) .rank-num { color: #b45309; }
   color: #334155;
   font-weight: 700;
   font-size: 0.84rem;
-  transition: background 0.12s, border-color 0.12s, box-shadow 0.12s, color 0.12s;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.06s, border-color 0.06s, box-shadow 0.06s, color 0.06s;
+}
+
+/* 누르는 즉시 눌린 느낌을 주어 반응이 빠르게 보이도록 한다. */
+.tool-row button:active {
+  transform: scale(0.95);
 }
 
 .tool-row button:hover:not(:disabled),

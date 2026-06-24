@@ -94,10 +94,18 @@ function sortProblemsByNumber(problems) {
   return [...problems].sort((a, b) => getProblemOrder(a) - getProblemOrder(b) || String(a.id).localeCompare(String(b.id)));
 }
 
-function chooseProblemId({ problems, savedLocation, skillId }) {
+function chooseProblemId({ problems, savedLocation, skillId, solvedIds = [] }) {
+  const solved = new Set(solvedIds);
   const savedProblemId = savedLocation.skillId === skillId ? savedLocation.problemId : "";
-  if (problems.some((problem) => problem.id === savedProblemId)) return savedProblemId;
-  if (skillId === defaultSkillId && problems.some((problem) => problem.id === defaultProblemId)) return defaultProblemId;
+  // 저장된 위치가 아직 안 푼 문제면 그대로 이어서 푼다.
+  if (savedProblemId && problems.some((problem) => problem.id === savedProblemId) && !solved.has(savedProblemId)) {
+    return savedProblemId;
+  }
+  // 그 외에는 앞에서부터 아직 안 푼 첫 문제로 이동한다. (예: 1~3 풀고 멈췄으면 4번)
+  const firstUnsolved = problems.find((problem) => !solved.has(problem.id));
+  if (firstUnsolved) return firstUnsolved.id;
+  // 모두 풀었으면 저장 위치나 첫 문제를 보여준다.
+  if (savedProblemId && problems.some((problem) => problem.id === savedProblemId)) return savedProblemId;
   return problems[0]?.id || "";
 }
 
@@ -143,7 +151,6 @@ export default function App() {
   const [hintUsed, setHintUsed] = useState({});
   const [reviewCounts, setReviewCounts] = useState({});
   const [solvedBySkill, setSolvedBySkill] = useState({});
-  const [tool, setTool] = useState("pen");
   const [dataWarning, setDataWarning] = useState("");
   const [noteRatio, setNoteRatio] = useState(68);
   const [mobileSkillOpen, setMobileSkillOpen] = useState(true);
@@ -151,6 +158,8 @@ export default function App() {
   const [guideSuppressChecked, setGuideSuppressChecked] = useState(false);
   const notebookRef = useRef(null);
   const workspaceRef = useRef(null);
+  // 스킬별 푼 문제 집합을 ref로도 들고 있어, 문제 로드 effect가 매 풀이마다 재실행되지 않으면서 최신 진행도를 참조한다.
+  const solvedBySkillRef = useRef(solvedBySkill);
 
   const selectedSkill = useMemo(
     () => skills.find((item) => item.id === selectedSkillId) || skills[0],
@@ -218,13 +227,18 @@ export default function App() {
   }, [profile.aiGuideReviewCounts]);
 
   useEffect(() => {
+    solvedBySkillRef.current = solvedBySkill;
+  }, [solvedBySkill]);
+
+  useEffect(() => {
     if (!user) return;
     const skill = skills.find((s) => s.id === selectedSkillId) || curriculumNodes.find((s) => s.id === selectedSkillId);
     loadProblemsBySkill(selectedSkillId)
       .then((items) => {
         const nextProblems = sortProblemsByNumber(items.length >= 50 ? items : getFallbackProblems(skill));
         const savedLocation = { skillId: profile.lastSkillId, problemId: profile.lastProblemId };
-        const nextProblemId = chooseProblemId({ problems: nextProblems, savedLocation, skillId: selectedSkillId });
+        const solvedIds = solvedBySkillRef.current[selectedSkillId] || [];
+        const nextProblemId = chooseProblemId({ problems: nextProblems, savedLocation, skillId: selectedSkillId, solvedIds });
         setProblems(nextProblems);
         setSelectedProblemId(nextProblemId);
         setGuide("새 문제를 열었습니다. 풀이를 쓰고 필요한 순간에 가이드를 요청하세요.");
@@ -233,7 +247,8 @@ export default function App() {
         console.error(error);
         const nextProblems = sortProblemsByNumber(getFallbackProblems(skill));
         const savedLocation = { skillId: profile.lastSkillId, problemId: profile.lastProblemId };
-        const nextProblemId = chooseProblemId({ problems: nextProblems, savedLocation, skillId: selectedSkillId });
+        const solvedIds = solvedBySkillRef.current[selectedSkillId] || [];
+        const nextProblemId = chooseProblemId({ problems: nextProblems, savedLocation, skillId: selectedSkillId, solvedIds });
         setProblems(nextProblems);
         setSelectedProblemId(nextProblemId);
         setDataWarning("");
@@ -651,8 +666,6 @@ export default function App() {
       >
         <NotebookPanel
           ref={notebookRef}
-          tool={tool}
-          setTool={setTool}
           skill={selectedSkill}
           problems={problems}
           selectedProblem={selectedProblem}
@@ -2767,8 +2780,6 @@ function Confetti({ active }) {
 
 const NotebookPanel = forwardRef(function NotebookPanel(
   {
-    tool,
-    setTool,
     skill,
     problems,
     selectedProblem,
@@ -2787,9 +2798,9 @@ const NotebookPanel = forwardRef(function NotebookPanel(
   const [answerInput, setAnswerInput] = useState("");
   const [showConfetti, setShowConfetti] = useState(false);
   const [shaking, setShaking] = useState(false);
+  const [tool, setTool] = useState("pen");
   const [showGrid, setShowGrid] = useState(false);
   const [handMode, setHandMode] = useState(false);
-  const [showSolved, setShowSolved] = useState(false);
   const [showConcept, setShowConcept] = useState(false);
   const [mobileSolveOpen, setMobileSolveOpen] = useState(true);
   const showGridRef = useRef(false);
@@ -2940,6 +2951,7 @@ const NotebookPanel = forwardRef(function NotebookPanel(
 
   function startDrawing(event) {
     if (event.pointerType === "touch" && !handModeRef.current) return;
+    if (!toolRef.current) return; // 펜·지우개가 모두 비활성이면 그리지 않음
     event.preventDefault();
     event.stopPropagation();
     drawingRef.current = true;
@@ -3023,11 +3035,10 @@ const NotebookPanel = forwardRef(function NotebookPanel(
   }));
 
   const solvedSet = new Set(solvedIds);
-  // 이미 푼 문제는 기본적으로 목록에서 숨기고, 일부러 선택했거나 "푼 문제 보기"를 켰을 때만 노출한다.
+  // 이미 푼 문제는 목록에서 숨긴다. 현재 보고 있는 문제만 예외로 남겨 select가 깨지지 않게 한다.
   const visibleProblems = problems.filter(
-    (problem) => showSolved || !solvedSet.has(problem.id) || problem.id === selectedProblemId,
+    (problem) => !solvedSet.has(problem.id) || problem.id === selectedProblemId,
   );
-  const solvedTotal = solvedSet.size;
 
   return (
     <section className={`notebook-panel ${mobileSolveOpen ? "" : "mobile-solve-collapsed"}`}>
@@ -3045,17 +3056,6 @@ const NotebookPanel = forwardRef(function NotebookPanel(
               </option>
             ))}
           </select>
-          {solvedTotal > 0 && (
-            <button
-              className={`solved-toggle ${showSolved ? "active" : ""}`}
-              type="button"
-              onClick={() => setShowSolved((prev) => !prev)}
-              title="이미 푼 문제를 목록에 표시할지 선택합니다"
-              aria-pressed={showSolved}
-            >
-              {showSolved ? "푼 문제 숨기기" : `푼 문제 보기 (${solvedTotal})`}
-            </button>
-          )}
           <button className="mobile-solve-toggle" type="button" onClick={() => setMobileSolveOpen((open) => !open)}>
             {mobileSolveOpen ? "접기" : "풀이"}
           </button>
@@ -3107,15 +3107,15 @@ const NotebookPanel = forwardRef(function NotebookPanel(
 
       <div className="solve-workspace">
       <div className="tool-row">
-        <button className={tool === "pen" ? "active" : ""} onClick={() => setTool("pen")}>
+        <button className={tool === "pen" ? "active" : ""} onClick={() => setTool((t) => (t === "pen" ? "" : "pen"))}>
           <PenLine size={17} />
           펜
         </button>
-        <button className={tool === "eraser" ? "active" : ""} onClick={() => setTool("eraser")}>
+        <button className={tool === "eraser" ? "active" : ""} onClick={() => setTool((t) => (t === "eraser" ? "" : "eraser"))}>
           <Eraser size={17} />
           지우개
         </button>
-        <button onClick={clearCanvas}>
+        <button className="note-clear-btn" onClick={clearCanvas}>
           <RefreshCw size={17} />
           새 노트
         </button>

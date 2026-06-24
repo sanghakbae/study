@@ -24,6 +24,8 @@ export function generateProblemsForSkill(skill) {
 function buildProblem(skill, n) {
   const builder = getBuilder(skill);
   const built = builder(skill, n);
+  // 힌트·풀이 방향·개념 보기 텍스트는 실제로 그 문제를 열 때만 만들면 되므로
+  // getter로 지연 생성한다. (시작 시 2100문제 × 3개 문자열을 미리 만들지 않아 첫 화면이 빨리 뜬다.)
   return {
     id: `p-${skill.id}-${String(n).padStart(2, "0")}`,
     nodeId: skill.id,
@@ -32,10 +34,10 @@ function buildProblem(skill, n) {
     sourceName: "내장 단원 문제은행",
     difficulty: Math.min(5, 1 + Math.floor((n - 1) / 12)),
     title: `${skill.title} ${n}`,
-    hint: hint(skill, built),
-    nextStep: next(skill, built),
-    conceptGuide: concept(skill, built),
     ...built,
+    get hint() { return hint(skill, built); },
+    get nextStep() { return next(skill, built); },
+    get conceptGuide() { return concept(skill, built); },
   };
 }
 
