@@ -957,6 +957,43 @@ button:disabled {
   line-height: 1.45;
 }
 
+.deploy-refresh-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(15, 23, 42, 0.72);
+  backdrop-filter: blur(4px);
+  pointer-events: all;
+}
+
+.deploy-refresh-card {
+  width: min(360px, 100%);
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 22px 18px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 5px;
+  background: #0f172a;
+  color: #e5edf8;
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.4);
+  text-align: center;
+}
+
+.deploy-refresh-card strong {
+  font-size: 1rem;
+  font-weight: 950;
+}
+
+.deploy-refresh-card span {
+  color: #cbd5e1;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
 .topbar,
 .dashboard-strip,
 .workspace,
@@ -3645,10 +3682,51 @@ li:nth-child(3) .rank-num { color: #b45309; }
 }
 
 @media (min-width: 721px) and (max-width: 1180px) {
+  html:has(.login-screen),
+  body:has(.login-screen),
+  #root:has(.login-screen),
+  html:has(.app-shell),
+  body:has(.app-shell),
+  #root:has(.app-shell),
+  html:has(.parent-shell),
+  body:has(.parent-shell),
+  #root:has(.parent-shell) {
+    height: auto !important;
+    min-height: 100% !important;
+    overflow-x: hidden;
+    overflow-y: auto !important;
+  }
+
+  .app-shell {
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
+    grid-template-rows: auto auto auto;
+  }
+
+  .workspace {
+    min-height: auto;
+    overflow: visible;
+  }
+
+  .notebook-panel,
+  .guide-panel {
+    min-height: auto;
+    overflow: visible;
+  }
+
+  .login-screen {
+    height: auto;
+    min-height: 100vh;
+    min-height: 100svh;
+    min-height: 100dvh;
+    overflow: visible;
+  }
+
   .parent-shell {
     height: auto;
     min-height: 100vh;
-    overflow: auto;
+    overflow: visible;
   }
 
   .parent-layout {

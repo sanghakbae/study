@@ -131,6 +131,18 @@ function buildFirstLoginChatMessage(nextUser, nextProfile) {
   ].join("\n");
 }
 
+function DeployRefreshOverlay() {
+  return (
+    <div className="deploy-refresh-overlay" role="alert" aria-live="assertive">
+      <div className="deploy-refresh-card">
+        <Loader2 className="spin" size={24} />
+        <strong>화면 조정 중입니다.</strong>
+        <span>새 버전을 불러오는 중입니다. 잠시만 기다려주세요.</span>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const isManagerPath = window.location.pathname === "/manager";
   const [user, setUser] = useState(null);
@@ -160,10 +172,12 @@ export default function App() {
   const [mobileSkillOpen, setMobileSkillOpen] = useState(true);
   const [showLoginGuide, setShowLoginGuide] = useState(false);
   const [guideSuppressChecked, setGuideSuppressChecked] = useState(false);
+  const [deployRefreshing, setDeployRefreshing] = useState(false);
   const notebookRef = useRef(null);
   const workspaceRef = useRef(null);
   // 스킬별 푼 문제 집합을 ref로도 들고 있어, 문제 로드 effect가 매 풀이마다 재실행되지 않으면서 최신 진행도를 참조한다.
   const solvedBySkillRef = useRef(solvedBySkill);
+  const deployVersionRef = useRef("");
 
   const selectedSkill = useMemo(
     () => skills.find((item) => item.id === selectedSkillId) || skills[0],
@@ -179,6 +193,44 @@ export default function App() {
     if (!selectedProblem?.id) return;
     setGuide(getFreshProblemGuide(selectedProblem, "conceptGuide") || `## 개념 학습\n- ${selectedProblem.concept}`);
   }, [selectedProblem?.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let reloadTimer = 0;
+
+    async function checkDeployVersion() {
+      try {
+        const response = await fetch(`/deploy-version.json?t=${Date.now()}`, {
+          cache: "no-store",
+        });
+        if (!response.ok) return;
+        const data = await response.json();
+        const nextVersion = String(data.version || "");
+        if (!nextVersion) return;
+        if (!deployVersionRef.current) {
+          deployVersionRef.current = nextVersion;
+          return;
+        }
+        if (deployVersionRef.current !== nextVersion && !cancelled) {
+          setDeployRefreshing(true);
+          window.clearTimeout(reloadTimer);
+          reloadTimer = window.setTimeout(() => {
+            window.location.reload();
+          }, 1400);
+        }
+      } catch {
+        // 배포 중 순간적인 404/네트워크 실패는 다음 주기에서 다시 확인한다.
+      }
+    }
+
+    checkDeployVersion();
+    const interval = window.setInterval(checkDeployVersion, 30000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      window.clearTimeout(reloadTimer);
+    };
+  }, []);
 
   useEffect(() => {
     localStorage.removeItem("study-note-ratio");
@@ -579,61 +631,83 @@ export default function App() {
   if (!authReady) {
     return (
       <main className="loading-screen">
+        {deployRefreshing && <DeployRefreshOverlay />}
         <Loader2 className="spin" size={34} />
       </main>
     );
   }
 
   if (!user) {
-    return isManagerPath ? <ManagerLoginScreen onLogin={() => handleLogin("admin")} /> : <LoginScreen onLogin={handleLogin} />;
+    return (
+      <>
+        {deployRefreshing && <DeployRefreshOverlay />}
+        {isManagerPath ? <ManagerLoginScreen onLogin={() => handleLogin("admin")} /> : <LoginScreen onLogin={handleLogin} />}
+      </>
+    );
   }
 
   if (isManagerPath && profile.role !== "admin") {
-    return <ManagerAccessDenied user={user} />;
+    return (
+      <>
+        {deployRefreshing && <DeployRefreshOverlay />}
+        <ManagerAccessDenied user={user} />
+      </>
+    );
   }
 
   if (!profile.onboardingComplete && profile.role !== "admin") {
-    return <OnboardingPage user={user} profile={profile} initialRole={pendingRole} onComplete={handleCompleteOnboarding} />;
+    return (
+      <>
+        {deployRefreshing && <DeployRefreshOverlay />}
+        <OnboardingPage user={user} profile={profile} initialRole={pendingRole} onComplete={handleCompleteOnboarding} />
+      </>
+    );
   }
 
   if (profile.role === "admin") {
     return (
-      <AdminPage
-        user={user}
-        profile={profile}
-        leaders={leaderboard}
-        members={members}
-        attempts={activityAttempts}
-        aiUsageLogs={aiUsageLogs}
-        onRoleUpdate={async (payload) => {
-          await updateUserRole(payload);
-          await refreshMembers();
-          await refreshCatalog();
-        }}
-      />
+      <>
+        {deployRefreshing && <DeployRefreshOverlay />}
+        <AdminPage
+          user={user}
+          profile={profile}
+          leaders={leaderboard}
+          members={members}
+          attempts={activityAttempts}
+          aiUsageLogs={aiUsageLogs}
+          onRoleUpdate={async (payload) => {
+            await updateUserRole(payload);
+            await refreshMembers();
+            await refreshCatalog();
+          }}
+        />
+      </>
     );
   }
 
   if (profile.role === "parents") {
     return (
-      <ParentPage
-        user={user}
-        profile={profile}
-        members={members}
-        attempts={activityAttempts}
-        leaders={leaderboard}
-        onRegisterChild={async (childUid) => {
-          const parentOf = Array.from(new Set([...(profile.parentOf || []), childUid].filter(Boolean)));
-          await updateUserRole({
-            uid: user.uid,
-            role: "parents",
-            parentOf,
-          });
-          const nextProfile = { ...profile, parentOf };
-          setProfile((current) => ({ ...current, parentOf }));
-          await refreshMembers(nextProfile);
-        }}
-      />
+      <>
+        {deployRefreshing && <DeployRefreshOverlay />}
+        <ParentPage
+          user={user}
+          profile={profile}
+          members={members}
+          attempts={activityAttempts}
+          leaders={leaderboard}
+          onRegisterChild={async (childUid) => {
+            const parentOf = Array.from(new Set([...(profile.parentOf || []), childUid].filter(Boolean)));
+            await updateUserRole({
+              uid: user.uid,
+              role: "parents",
+              parentOf,
+            });
+            const nextProfile = { ...profile, parentOf };
+            setProfile((current) => ({ ...current, parentOf }));
+            await refreshMembers(nextProfile);
+          }}
+        />
+      </>
     );
   }
 
@@ -642,6 +716,7 @@ export default function App() {
 
   return (
     <main className="app-shell">
+      {deployRefreshing && <DeployRefreshOverlay />}
       {dataWarning && <div className="warning-bar">{dataWarning}</div>}
       <Topbar user={user} profile={profile} rank={topbarRank || 0} />
       {showLoginGuide && (
