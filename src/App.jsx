@@ -11,6 +11,7 @@ import {
   Eraser,
   Flame,
   Gamepad2,
+  Hand,
   HelpCircle,
   Loader2,
   Lock,
@@ -71,9 +72,9 @@ const fallbackUser = {
 
 const guideActions = [
   { key: "check", label: "AI 가이드", icon: ShieldCheck },
-  { key: "next", label: "풀이 방향", icon: ChevronRight, xpPenalty: true },
-  { key: "hint", label: "힌트 받기", icon: HelpCircle, xpPenalty: true },
-  { key: "concept", label: "개념 다시보기", icon: BookOpen, xpPenalty: true },
+  { key: "next", label: "풀이 방향", icon: ChevronRight },
+  { key: "hint", label: "힌트 받기", icon: HelpCircle },
+  { key: "concept", label: "개념 보기", icon: BookOpen },
 ];
 
 const googleChatWebhookUrl =
@@ -377,7 +378,7 @@ export default function App() {
 
     if (action.key === "concept") {
       trackHintUse(selectedProblem.id, action.key);
-      setGuide(selectedProblem.conceptGuide || `## 개념 다시보기\n- ${selectedProblem.concept}`);
+      setGuide(selectedProblem.conceptGuide || `## 개념 보기\n- ${selectedProblem.concept}`);
       return;
     }
 
@@ -391,7 +392,7 @@ export default function App() {
     const reviewKey = `${selectedProblem.id}`;
     const usedCount = reviewCounts[reviewKey] || 0;
     if (usedCount >= 1) {
-      setGuide("## AI 가이드 사용 완료\n- AI 가이드는 문제당 1회만 사용할 수 있습니다.\n- 풀이 방향, 힌트, 개념 다시보기를 참고해서 다시 정리해 보세요.");
+      setGuide("## AI 가이드 사용 완료\n- AI 가이드는 문제당 1회만 사용할 수 있습니다.\n- 풀이 방향, 힌트, 개념 보기를 참고해서 다시 정리해 보세요.");
       return;
     }
 
@@ -460,9 +461,9 @@ export default function App() {
     setSaving(true);
 
     const alreadySolved = (solvedBySkill[problem.nodeId] || []).includes(problem.id);
-    const hints = getGuidePenaltyCount(problem.id);
     const helpUsed = Array.isArray(hintUsed[problem.id]) ? hintUsed[problem.id] : [];
-    const xpMultiplier = Math.max(0.3, 1 - hints * 0.05);
+    // 힌트/풀이 방향/개념 보기는 기본 제공이라 XP를 깎지 않는다.
+    const xpMultiplier = 1;
 
     if (completed) {
       markProblemCompleted(problem.id, problem.nodeId);
@@ -659,6 +660,7 @@ export default function App() {
           answerCheck={answerChecks[selectedProblem.id]}
           saving={saving}
           solvedCount={solvedBySkill[selectedSkillId]?.length || 0}
+          solvedIds={solvedBySkill[selectedSkillId] || []}
           hintCount={getGuidePenaltyCount(selectedProblem?.id)}
           onAnswerCheck={handleAnswerCheck}
           onSave={handleSaveAttempt}
@@ -836,7 +838,7 @@ function LoginGuideModal({ suppressChecked, onSuppressChange, onClose }) {
           <GuideStep
             type="helper"
             title="3. 막히면 도움 받기"
-            body="풀이 방향, 힌트, 개념 다시보기를 눌러요. 도움을 쓰면 받을 XP가 조금 줄어요."
+            body="풀이 방향, 힌트, 개념 보기를 눌러요. 모두 기본 제공이라 XP가 줄지 않아요."
           />
         </div>
 
@@ -2774,6 +2776,7 @@ const NotebookPanel = forwardRef(function NotebookPanel(
     answerCheck,
     saving,
     solvedCount,
+    solvedIds = [],
     hintCount,
     onAnswerCheck,
     onSave,
@@ -2784,8 +2787,12 @@ const NotebookPanel = forwardRef(function NotebookPanel(
   const [showConfetti, setShowConfetti] = useState(false);
   const [shaking, setShaking] = useState(false);
   const [showGrid, setShowGrid] = useState(false);
+  const [handMode, setHandMode] = useState(false);
+  const [showSolved, setShowSolved] = useState(false);
+  const [showConcept, setShowConcept] = useState(false);
   const [mobileSolveOpen, setMobileSolveOpen] = useState(true);
   const showGridRef = useRef(false);
+  const handModeRef = useRef(false);
   const canvasRef = useRef(null);
   const cursorRef = useRef(null);
   const ctxRef = useRef(null);
@@ -2805,6 +2812,10 @@ const NotebookPanel = forwardRef(function NotebookPanel(
   useEffect(() => {
     showGridRef.current = showGrid;
   }, [showGrid]);
+
+  useEffect(() => {
+    handModeRef.current = handMode;
+  }, [handMode]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -2854,6 +2865,7 @@ const NotebookPanel = forwardRef(function NotebookPanel(
     clearCanvas();
     setAnswerInput("");
     setShowConfetti(false);
+    setShowConcept(false);
   }, [selectedProblemId]);
 
 
@@ -2926,7 +2938,7 @@ const NotebookPanel = forwardRef(function NotebookPanel(
   }
 
   function startDrawing(event) {
-    if (event.pointerType === "touch") return;
+    if (event.pointerType === "touch" && !handModeRef.current) return;
     event.preventDefault();
     event.stopPropagation();
     drawingRef.current = true;
@@ -2940,7 +2952,7 @@ const NotebookPanel = forwardRef(function NotebookPanel(
   }
 
   function moveDrawing(event) {
-    if (event.pointerType === "touch") return;
+    if (event.pointerType === "touch" && !handModeRef.current) return;
     if (activePointerIdRef.current != null && event.pointerId !== activePointerIdRef.current) return;
     updateCursor(event);
     if (!drawingRef.current) return;
@@ -3009,6 +3021,13 @@ const NotebookPanel = forwardRef(function NotebookPanel(
     },
   }));
 
+  const solvedSet = new Set(solvedIds);
+  // 이미 푼 문제는 기본적으로 목록에서 숨기고, 일부러 선택했거나 "푼 문제 보기"를 켰을 때만 노출한다.
+  const visibleProblems = problems.filter(
+    (problem) => showSolved || !solvedSet.has(problem.id) || problem.id === selectedProblemId,
+  );
+  const solvedTotal = solvedSet.size;
+
   return (
     <section className={`notebook-panel ${mobileSolveOpen ? "" : "mobile-solve-collapsed"}`}>
       <Confetti active={showConfetti} />
@@ -3019,12 +3038,23 @@ const NotebookPanel = forwardRef(function NotebookPanel(
         </div>
         <div className="problem-header-actions">
           <select value={selectedProblemId} onChange={(event) => setSelectedProblemId(event.target.value)}>
-            {problems.map((problem) => (
+            {visibleProblems.map((problem) => (
               <option value={problem.id} key={problem.id}>
-                {problem.title}
+                {solvedSet.has(problem.id) ? `✓ ${problem.title}` : problem.title}
               </option>
             ))}
           </select>
+          {solvedTotal > 0 && (
+            <button
+              className={`solved-toggle ${showSolved ? "active" : ""}`}
+              type="button"
+              onClick={() => setShowSolved((prev) => !prev)}
+              title="이미 푼 문제를 목록에 표시할지 선택합니다"
+              aria-pressed={showSolved}
+            >
+              {showSolved ? "푼 문제 숨기기" : `푼 문제 보기 (${solvedTotal})`}
+            </button>
+          )}
           <button className="mobile-solve-toggle" type="button" onClick={() => setMobileSolveOpen((open) => !open)}>
             {mobileSolveOpen ? "접기" : "풀이"}
           </button>
@@ -3045,17 +3075,26 @@ const NotebookPanel = forwardRef(function NotebookPanel(
       <article className="problem-card">
         <div className="problem-card-meta">
           <span>{"★".repeat(selectedProblem?.difficulty || 1)}{"☆".repeat(Math.max(0, 5 - (selectedProblem?.difficulty || 1)))}</span>
-          {(() => {
-            const baseXp = 30 + (selectedProblem?.difficulty || 1) * 10;
-            const mult = Math.max(0.3, 1 - (hintCount || 0) * 0.05);
-            const earnXp = Math.round(baseXp * mult);
-            return hintCount > 0
-              ? <span className="problem-xp penalty">+{earnXp} XP <s style={{opacity:0.5, fontSize:"0.75em"}}>{baseXp}</s> <small style={{color:"#f59e0b"}}>(-{Math.round((1-mult)*100)}%)</small></span>
-              : <span className="problem-xp">+{baseXp} XP</span>;
-          })()}
+          <span className="problem-xp">+{30 + (selectedProblem?.difficulty || 1) * 10} XP</span>
+          <button
+            type="button"
+            className={`concept-inline-toggle ${showConcept ? "active" : ""}`}
+            onClick={() => setShowConcept((prev) => !prev)}
+            aria-pressed={showConcept}
+          >
+            <BookOpen size={14} />
+            {showConcept ? "개념 닫기" : "개념 보기"}
+          </button>
         </div>
         <p>{selectedProblem?.prompt}</p>
         <ProblemAssets assets={selectedProblem?.assets || []} />
+        {showConcept && (
+          <div className="concept-inline">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {selectedProblem?.conceptGuide || `## 개념 보기\n- ${selectedProblem?.concept || "이 문제의 핵심 개념을 정리해 보세요."}`}
+            </ReactMarkdown>
+          </div>
+        )}
       </article>
 
       <div className="solve-workspace">
@@ -3071,6 +3110,15 @@ const NotebookPanel = forwardRef(function NotebookPanel(
         <button onClick={clearCanvas}>
           <RefreshCw size={17} />
           새 노트
+        </button>
+        <button
+          className={`hand-toggle ${handMode ? "active" : ""}`}
+          onClick={() => setHandMode((prev) => !prev)}
+          title={handMode ? "손글씨 켜짐: 손가락으로 바로 쓸 수 있어요" : "손글씨 끄기: 손가락 글씨를 막아요"}
+          aria-pressed={handMode}
+        >
+          <Hand size={17} />
+          손글씨
         </button>
         <button
           className={`grid-toggle ${showGrid ? "active" : ""}`}

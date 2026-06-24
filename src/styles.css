@@ -1758,9 +1758,71 @@ button:disabled {
 /* ── Problem card meta ── */
 .problem-card-meta {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: 8px;
   margin-bottom: 6px;
+}
+
+.concept-inline-toggle {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 9px;
+  border-radius: 5px;
+  border: 1px solid #c7d2fe;
+  background: #eef2ff;
+  color: #4338ca;
+  font-size: 0.72rem;
+  font-weight: 700;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.concept-inline-toggle:hover {
+  background: #e0e7ff;
+  border-color: #a5b4fc;
+}
+
+.concept-inline-toggle.active {
+  background: linear-gradient(135deg, #6366f1, #4f46e5);
+  border-color: transparent;
+  color: #fff;
+}
+
+.concept-inline {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #e0e7ff;
+  background: #f5f7ff;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: #1e293b;
+}
+
+.concept-inline > :first-child {
+  margin-top: 0;
+}
+
+.concept-inline > :last-child {
+  margin-bottom: 0;
+}
+
+.solved-toggle {
+  white-space: nowrap;
+  padding: 0 10px;
+  border-radius: 5px;
+  border: 1px solid #e2e8f0;
+  background: #f1f5f9;
+  color: #475569;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.solved-toggle.active {
+  background: linear-gradient(135deg, #0d9488, #0f766e);
+  border-color: transparent;
+  color: #fff;
 }
 
 .problem-card-meta span:first-child {
