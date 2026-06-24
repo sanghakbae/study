@@ -36,6 +36,7 @@ import { auth, googleProvider } from "./firebase";
 import {
   completeOnboarding,
   ensureUserProfile,
+  loadAuditLogsForUsers,
   loadAiUsageLogsForUsers,
   loadAttemptsForUsers,
   loadAllProblems,
@@ -49,6 +50,7 @@ import {
   markAiGuideUsed,
   markFirstLoginChatNotified,
   saveAiUsageLog,
+  saveAuditLog,
   saveAttempt,
   seedCatalogIfNeeded,
   suppressLoginGuideForSevenDays,
@@ -159,6 +161,7 @@ export default function App() {
   const [members, setMembers] = useState([]);
   const [activityAttempts, setActivityAttempts] = useState([]);
   const [aiUsageLogs, setAiUsageLogs] = useState([]);
+  const [auditLogs, setAuditLogs] = useState([]);
   const [guide, setGuide] = useState("문제를 고르고 노트에 풀이를 시작하세요. 막히는 순간 오른쪽 버튼으로 힌트를 받을 수 있습니다.");
   const [guideLoading, setGuideLoading] = useState(false);
   const [pendingRole, setPendingRole] = useState(null);
@@ -178,6 +181,8 @@ export default function App() {
   // 스킬별 푼 문제 집합을 ref로도 들고 있어, 문제 로드 effect가 매 풀이마다 재실행되지 않으면서 최신 진행도를 참조한다.
   const solvedBySkillRef = useRef(solvedBySkill);
   const deployVersionRef = useRef("");
+  const auditLoginRef = useRef("");
+  const parentViewAuditRef = useRef("");
 
   const selectedSkill = useMemo(
     () => skills.find((item) => item.id === selectedSkillId) || skills[0],
@@ -250,6 +255,17 @@ export default function App() {
         try {
           const nextProfile = await ensureUserProfile(nextUser);
           setProfile((current) => ({ ...current, ...nextProfile }));
+          const loginAuditKey = `${nextUser.uid}:${Number(nextUser.metadata?.lastSignInTime ? new Date(nextUser.metadata.lastSignInTime).getTime() : Date.now())}`;
+          if (auditLoginRef.current !== loginAuditKey) {
+            auditLoginRef.current = loginAuditKey;
+            saveAuditLog({
+              user: nextUser,
+              action: "login",
+              category: "auth",
+              message: `${nextProfile.role || "student"} 로그인`,
+              metadata: { role: nextProfile.role || "student", email: nextUser.email || "" },
+            }).catch((error) => console.error("Audit login failed:", error));
+          }
           if (nextProfile.firstLoginChatNotificationPending && !nextProfile.firstLoginChatNotifiedAt) {
             notifyFirstLogin(nextUser, nextProfile)
               .then(() => markFirstLoginChatNotified(nextUser.uid))
@@ -268,6 +284,8 @@ export default function App() {
         }
       } else {
         setSolvedBySkill({});
+        auditLoginRef.current = "";
+        parentViewAuditRef.current = "";
       }
       setAuthReady(true);
     });
@@ -324,6 +342,21 @@ export default function App() {
   }, [authReady, selectedSkillId, selectedProblemId, user]);
 
   useEffect(() => {
+    if (!authReady || !user || profile.role !== "parents") return;
+    const childList = (profile.parentOf || []).join(",");
+    const auditKey = `${user.uid}:${childList}`;
+    if (parentViewAuditRef.current === auditKey) return;
+    parentViewAuditRef.current = auditKey;
+    saveAuditLog({
+      user,
+      action: "parent_view",
+      category: "parent",
+      message: "자녀 학습 현황 조회",
+      metadata: { role: profile.role, parentOf: profile.parentOf || [] },
+    }).catch((error) => console.error("Audit parent view failed:", error));
+  }, [authReady, user, profile.role, profile.parentOf]);
+
+  useEffect(() => {
     const shouldShowGuide =
       authReady &&
       user &&
@@ -356,6 +389,7 @@ export default function App() {
       setMembers([]);
       setActivityAttempts([]);
       setAiUsageLogs([]);
+      setAuditLogs([]);
       return;
     }
 
@@ -365,13 +399,19 @@ export default function App() {
       nextProfile.role === "admin"
         ? loadedUsers.filter((item) => item.role === "student").map((item) => item.uid)
         : nextProfile.parentOf || [];
-    const [attempts, progressDocs, usageLogs] = await Promise.all([
+    const auditTargetUserIds =
+      nextProfile.role === "admin"
+        ? loadedUsers.map((item) => item.uid)
+        : Array.from(new Set([user.uid, ...(nextProfile.parentOf || [])].filter(Boolean)));
+    const [attempts, progressDocs, usageLogs, auditLogRows] = await Promise.all([
       loadAttemptsForUsers(targetUserIds),
       loadProgressForUsers(targetUserIds),
       loadAiUsageLogsForUsers(targetUserIds),
+      loadAuditLogsForUsers(auditTargetUserIds),
     ]);
     setActivityAttempts(mergeAttemptsWithProgress(attempts, progressDocs));
     setAiUsageLogs(usageLogs);
+    setAuditLogs(auditLogRows);
   }
 
   useEffect(() => {
@@ -393,6 +433,38 @@ export default function App() {
         alert(`Google 로그인 실패: ${error.message}`);
       }
     }
+  }
+
+  async function handleLogout() {
+    const currentUser = auth.currentUser || user;
+    if (currentUser) {
+      try {
+        await saveAuditLog({
+          user: currentUser,
+          action: "logout",
+          category: "auth",
+          message: `${profile.role || "student"} 로그아웃`,
+          metadata: { role: profile.role || "student", email: currentUser.email || "" },
+        });
+      } catch (error) {
+        console.error("Audit logout failed:", error);
+      }
+    }
+    await signOut(auth);
+  }
+
+  async function handleDeniedLogout() {
+    const currentUser = auth.currentUser || user;
+    if (currentUser) {
+      saveAuditLog({
+        user: currentUser,
+        action: "manager_access_denied",
+        category: "auth",
+        message: "관리자 페이지 권한 없음",
+        metadata: { role: profile.role || "student", email: currentUser.email || "" },
+      }).catch((error) => console.error("Audit denied failed:", error));
+    }
+    await handleLogout();
   }
 
   async function handleCompleteOnboarding({ role, grade }) {
@@ -537,6 +609,7 @@ export default function App() {
     const alreadySolved = (solvedBySkill[problem.nodeId] || []).includes(problem.id);
     const hints = getGuidePenaltyCount(problem.id);
     const helpUsed = Array.isArray(hintUsed[problem.id]) ? hintUsed[problem.id] : [];
+    const submittedAnswer = answerChecks[problem.id]?.input || "";
     // 힌트 받기·풀이 방향만 XP 5%씩 차감한다. 개념 학습은 기본 제공이라 차감하지 않는다.
     const xpMultiplier = Math.max(0.3, 1 - hints * 0.05);
 
@@ -555,6 +628,7 @@ export default function App() {
         status: completed ? "completed" : "saved",
         alreadySolved,
         xpMultiplier,
+        submittedAnswer,
         helpUsed,
       });
       if (!completed) {
@@ -564,7 +638,7 @@ export default function App() {
       await refreshMembers();
     } catch (error) {
       console.error(error);
-      if (!completed) setGuide(`저장 실패: ${error.message}`);
+      setGuide(`${completed ? "해결 완료" : "저장"} 기록 실패: ${error.message}`);
     } finally {
       setSaving(false);
     }
@@ -650,7 +724,7 @@ export default function App() {
     return (
       <>
         {deployRefreshing && <DeployRefreshOverlay />}
-        <ManagerAccessDenied user={user} />
+        <ManagerAccessDenied user={user} onLogout={handleDeniedLogout} />
       </>
     );
   }
@@ -674,7 +748,9 @@ export default function App() {
           leaders={leaderboard}
           members={members}
           attempts={activityAttempts}
+          auditLogs={auditLogs}
           aiUsageLogs={aiUsageLogs}
+          onLogout={handleLogout}
           onRoleUpdate={async (payload) => {
             await updateUserRole(payload);
             await refreshMembers();
@@ -695,6 +771,7 @@ export default function App() {
           members={members}
           attempts={activityAttempts}
           leaders={leaderboard}
+          onLogout={handleLogout}
           onRegisterChild={async (childUid) => {
             const parentOf = Array.from(new Set([...(profile.parentOf || []), childUid].filter(Boolean)));
             await updateUserRole({
@@ -718,7 +795,7 @@ export default function App() {
     <main className="app-shell">
       {deployRefreshing && <DeployRefreshOverlay />}
       {dataWarning && <div className="warning-bar">{dataWarning}</div>}
-      <Topbar user={user} profile={profile} rank={topbarRank || 0} />
+      <Topbar user={user} profile={profile} rank={topbarRank || 0} onLogout={handleLogout} />
       {showLoginGuide && (
         <LoginGuideModal
           suppressChecked={guideSuppressChecked}
@@ -794,12 +871,12 @@ export default function App() {
   );
 }
 
-function AdminPage({ user, profile, members, attempts, aiUsageLogs, onRoleUpdate }) {
+function AdminPage({ user, profile, members, attempts, auditLogs, aiUsageLogs, onRoleUpdate, onLogout }) {
   const [activeMenu, setActiveMenu] = useState("stats");
 
   return (
     <main className="app-shell admin-shell">
-      <Topbar user={user} profile={profile} />
+      <Topbar user={user} profile={profile} onLogout={onLogout} />
       <section className="admin-layout">
         <aside className="admin-sidebar">
           <button className={activeMenu === "members" ? "active" : ""} onClick={() => setActiveMenu("members")}>
@@ -832,7 +909,7 @@ function AdminPage({ user, profile, members, attempts, aiUsageLogs, onRoleUpdate
             <MemberManager members={members} onRoleUpdate={onRoleUpdate} />
           </section>
         ) : activeMenu === "audit" ? (
-          <AdminAuditLog members={members} attempts={attempts} />
+          <AdminAuditLog members={members} attempts={attempts} auditLogs={auditLogs} />
         ) : activeMenu === "ai" ? (
           <AdminAiUsage members={members} usageLogs={aiUsageLogs} />
         ) : activeMenu === "problems" ? (
@@ -849,13 +926,41 @@ function AdminPage({ user, profile, members, attempts, aiUsageLogs, onRoleUpdate
   );
 }
 
-function ParentPage({ user, profile, members, attempts, leaders, onRegisterChild }) {
+function ParentPage({ user, profile, members, attempts, leaders, onRegisterChild, onLogout }) {
+  const [reportModalOpen, setReportModalOpen] = useState(false);
+  const [monthlyReportChecked, setMonthlyReportChecked] = useState(false);
   const childIds = new Set(profile?.parentOf || []);
+  const students = members.filter((member) => member.role === "student");
   const children = members.filter((member) => member.role === "student" && childIds.has(member.uid));
+  const reportAttempts = buildFallbackAttemptsForChildren(children, attempts);
   const primaryChild = children[0] || null;
+
+  useEffect(() => {
+    if (monthlyReportChecked || !children.length) return;
+    setMonthlyReportChecked(true);
+    if (isMonthEnd(new Date())) {
+      setReportModalOpen(true);
+    }
+  }, [monthlyReportChecked, children.length]);
+
   return (
     <main className="app-shell parent-shell">
-      <Topbar user={user} profile={profile} />
+      <Topbar user={user} profile={profile} onLogout={onLogout} />
+      <div className="parent-report-bar">
+        <button type="button" onClick={() => setReportModalOpen(true)} disabled={!children.length}>
+          <Printer size={14} />
+          자녀 리포트 PDF 다운로드
+        </button>
+      </div>
+      {reportModalOpen && (
+        <ParentReportModal
+          children={children}
+          attempts={reportAttempts}
+          allStudents={students}
+          onClose={() => setReportModalOpen(false)}
+          onPrint={() => window.print()}
+        />
+      )}
       <section className="parent-layout">
         <ParentInsightPanel profile={profile} members={members} attempts={attempts} onRegisterChild={onRegisterChild} />
         <Leaderboard
@@ -866,11 +971,105 @@ function ParentPage({ user, profile, members, attempts, leaders, onRegisterChild
           preview={false}
         />
       </section>
+      <LearningPrintReports students={children} attempts={reportAttempts} allStudents={students} />
     </main>
   );
 }
 
-function Topbar({ user, profile, rank = 0 }) {
+function ParentReportModal({ children, attempts, allStudents, onClose, onPrint }) {
+  const period = getCurrentMonthPeriod();
+  const rankedStudents = [...allStudents].sort((a, b) => (b.xp || 0) - (a.xp || 0));
+  const avgXp = allStudents.length ? Math.round(allStudents.reduce((sum, student) => sum + (Number(student.xp) || 0), 0) / allStudents.length) : 0;
+  const avgSolved = allStudents.length ? Math.round(allStudents.reduce((sum, student) => sum + (Number(student.solvedCount) || 0), 0) / allStudents.length) : 0;
+
+  return (
+    <div className="parent-report-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="parent-report-title">
+      <div className="parent-report-modal">
+        <div className="parent-report-modal-head">
+          <div>
+            <h2 id="parent-report-title">월간 자녀 학습 리포트</h2>
+            <p>{period.label} · {children.length}명의 자녀 리포트를 확인하고 PDF로 저장합니다.</p>
+          </div>
+          <button type="button" className="icon-button light" onClick={onClose} aria-label="닫기">
+            ×
+          </button>
+        </div>
+        <div className="parent-report-modal-list">
+          {children.map((child) => {
+            const childAttempts = attempts.filter((attempt) => attempt.uid === child.uid);
+            const monthAttempts = childAttempts.filter((attempt) => {
+              const time = getAttemptTime(attempt);
+              return time >= period.startTime && time <= period.endTime;
+            });
+            const dashboard = buildChildDashboard({
+              child,
+              attempts: childAttempts,
+              students: allStudents,
+              rankIndex: rankedStudents.findIndex((item) => item.uid === child.uid),
+              avgXp,
+              avgSolved,
+            });
+            return (
+              <article key={child.uid} className="parent-report-preview-card">
+                <div className="parent-report-preview-head">
+                  <div>
+                    <strong>{formatStudentName(child)}</strong>
+                    <span>{child.email || "이메일 없음"}</span>
+                  </div>
+                  <b>{Number(child.xp || 0).toLocaleString()} XP</b>
+                </div>
+                <div className="parent-report-preview-grid">
+                  <div>
+                    <span>전체 해결</span>
+                    <strong>{Number(child.solvedCount) || 0}문제</strong>
+                  </div>
+                  <div>
+                    <span>이번 달 활동</span>
+                    <strong>{monthAttempts.length}건</strong>
+                  </div>
+                  <div>
+                    <span>현재 단원</span>
+                    <strong>{dashboard.summary[0]?.value || "-"}</strong>
+                  </div>
+                  <div>
+                    <span>전체 순위</span>
+                    <strong>{dashboard.growth[2]?.value || "-"}</strong>
+                  </div>
+                </div>
+                <div className="parent-report-preview-note">
+                  <span>최근 7일 해결: {dashboard.summary[2]?.value || "-"}</span>
+                  <span>반복 오답: {dashboard.risks[0]?.value || "없음"}</span>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+        <div className="parent-report-modal-actions">
+          <button type="button" onClick={onClose}>닫기</button>
+          <button type="button" className="primary" onClick={onPrint}>
+            <Printer size={14} />
+            PDF 저장
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function isMonthEnd(date) {
+  const nextDate = new Date(date);
+  nextDate.setDate(date.getDate() + 1);
+  return nextDate.getMonth() !== date.getMonth();
+}
+
+function getCurrentMonthPeriod(date = new Date()) {
+  const start = new Date(date.getFullYear(), date.getMonth(), 1, 0, 0, 0, 0);
+  const end = new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59, 999);
+  const label = new Intl.DateTimeFormat("ko-KR", { year: "numeric", month: "long" }).format(date);
+  return { startTime: start.getTime(), endTime: end.getTime(), label };
+}
+
+function Topbar({ user, profile, rank = 0, onLogout }) {
   return (
     <header className="topbar">
       <div className="brand-block">
@@ -900,7 +1099,7 @@ function Topbar({ user, profile, rank = 0 }) {
           {user.photoURL ? <img src={user.photoURL} alt="" /> : <UserRound size={18} />}
           <span>{user.displayName || "러너"}</span>
         </div>
-        <button className="icon-button" onClick={() => signOut(auth)} aria-label="로그아웃">
+        <button className="icon-button" onClick={onLogout || (() => signOut(auth))} aria-label="로그아웃">
           <LogOut size={18} />
         </button>
       </div>
@@ -1101,7 +1300,7 @@ function ManagerLoginScreen({ onLogin }) {
   );
 }
 
-function ManagerAccessDenied({ user }) {
+function ManagerAccessDenied({ user, onLogout }) {
   return (
     <main className="login-screen">
       <div className="login-art">
@@ -1111,7 +1310,7 @@ function ManagerAccessDenied({ user }) {
           </div>
           <h1>관리자 페이지 접속</h1>
           <p className="manager-warning">관리자만 접속이 가능합니다.</p>
-          <button className="google-button manager-google-button" onClick={() => signOut(auth)}>
+          <button className="google-button manager-google-button" onClick={onLogout || (() => signOut(auth))}>
             Google 로그인
           </button>
         </div>
@@ -1437,13 +1636,6 @@ function MemberManager({ members, onRoleUpdate }) {
     });
   }
 
-  async function handleParentOfChange(member, childUid) {
-    await saveMember(member, {
-      role: "parents",
-      parentOf: childUid ? [childUid] : [],
-    });
-  }
-
   return (
     <div className="member-manager">
       <h3>회원 관리</h3>
@@ -1520,14 +1712,16 @@ function MemberManager({ members, onRoleUpdate }) {
                   </td>
                   <td>
                     {(member.role || "student") === "parents" ? (
-                      <select value={member.parentOf?.[0] || ""} onChange={(event) => handleParentOfChange(member, event.target.value)}>
-                        <option value="">선택 안함</option>
-                        {students.map((student) => (
-                          <option value={student.uid} key={student.uid}>
-                            {formatStudentName(student)}
-                          </option>
-                        ))}
-                      </select>
+                      <div className="member-child-list">
+                        {(member.parentOf || []).length ? (
+                          (member.parentOf || []).map((childUid) => {
+                            const child = students.find((student) => student.uid === childUid);
+                            return <span key={childUid}>{child ? formatStudentName(child) : childUid}</span>;
+                          })
+                        ) : (
+                          <span className="muted">연결 없음</span>
+                        )}
+                      </div>
                     ) : (
                       <span className="muted">-</span>
                     )}
@@ -1809,7 +2003,7 @@ function AdminLearningDashboard({ members, attempts }) {
         <StatCard label="평균 해결" value={`${avgSolved}개`} />
         <StatCard label="정답률" value={`${accuracy}%`} />
       </div>
-      <div className="admin-chart-grid">
+      <div className="admin-chart-grid learning-chart-grid">
         <DonutChartCard title="전체 스킬 완료 현황" items={skillStatus} centerLabel="완료" />
         <DonutChartCard title="스킬별 해결 수" items={skillSolved} centerLabel="해결" />
         <DonutChartCard title="스킬별 오답 수" items={skillWrong} centerLabel="오답" />
@@ -1818,18 +2012,130 @@ function AdminLearningDashboard({ members, attempts }) {
       <div className="admin-wide-chart">
         <ColumnChartCard title="최근 7일 학습 흐름" items={recentTrend} />
       </div>
+      <LearningPrintReports students={scopedStudents} attempts={displayAttempts} allStudents={students} />
     </section>
   );
 }
 
-function AdminAuditLog({ members, attempts }) {
+function LearningPrintReports({ students, attempts, allStudents }) {
+  const rankedStudents = [...allStudents].sort((a, b) => (b.xp || 0) - (a.xp || 0));
+  const avgXp = allStudents.length ? Math.round(allStudents.reduce((sum, student) => sum + (Number(student.xp) || 0), 0) / allStudents.length) : 0;
+  const avgSolved = allStudents.length ? Math.round(allStudents.reduce((sum, student) => sum + (Number(student.solvedCount) || 0), 0) / allStudents.length) : 0;
+
+  return (
+    <div className="print-report-root" aria-hidden="true">
+      {students.map((student) => {
+        const studentAttempts = attempts.filter((attempt) => attempt.uid === student.uid);
+        const completedAttempts = studentAttempts.filter((attempt) => attempt.completed);
+        const wrongAttempts = studentAttempts.filter((attempt) => attempt.status === "wrong" || attempt.wrong);
+        const dashboard = buildChildDashboard({
+          child: student,
+          attempts: studentAttempts,
+          students: allStudents,
+          rankIndex: rankedStudents.findIndex((item) => item.uid === student.uid),
+          avgXp,
+          avgSolved,
+        });
+        const recentRows = studentAttempts.slice(0, 8);
+        const accuracy = completedAttempts.length + wrongAttempts.length
+          ? `${Math.round((completedAttempts.length / (completedAttempts.length + wrongAttempts.length)) * 100)}%`
+          : "-";
+
+        return (
+          <article className="print-student-report" key={student.uid}>
+            <header className="print-report-head">
+              <div>
+                <span>Study Math Arena</span>
+                <h1>{student.displayName || student.email || "학생"} 학습 리포트</h1>
+                <p>{student.grade || "학년 미설정"} · {student.email || "이메일 없음"}</p>
+              </div>
+              <strong>{new Intl.DateTimeFormat("ko-KR", { dateStyle: "medium" }).format(new Date())}</strong>
+            </header>
+
+            <section className="print-metric-grid">
+              <PrintMetric label="XP" value={(Number(student.xp) || 0).toLocaleString()} />
+              <PrintMetric label="해결 문제" value={`${Number(student.solvedCount) || completedAttempts.length}개`} />
+              <PrintMetric label="정답률" value={accuracy} />
+              <PrintMetric label="전체 순위" value={dashboard.growth[2]?.value || "-"} />
+            </section>
+
+            <section className="print-report-section">
+              <h2>상단 요약</h2>
+              <div className="print-info-grid">
+                {dashboard.summary.map((item) => <PrintMetric key={item.label} label={item.label} value={item.value} />)}
+              </div>
+            </section>
+
+            <section className="print-report-section">
+              <h2>위험 신호</h2>
+              <div className="print-info-grid">
+                {dashboard.risks.map((item) => <PrintMetric key={item.label} label={item.label} value={item.value} detail={item.detail} />)}
+              </div>
+            </section>
+
+            <section className="print-report-section">
+              <h2>비교/성장</h2>
+              <div className="print-info-grid">
+                {dashboard.growth.map((item) => <PrintMetric key={item.label} label={item.label} value={item.value} detail={item.detail} />)}
+              </div>
+            </section>
+
+            <section className="print-report-section print-activity-section">
+              <h2>최근 활동</h2>
+              <table>
+                <thead>
+                  <tr>
+                    <th>날짜</th>
+                    <th>단원</th>
+                    <th>문제</th>
+                    <th>상태</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recentRows.length ? recentRows.map((attempt) => {
+                    const problemText = getProblemText(attempt);
+                    return (
+                      <tr key={attempt.id}>
+                        <td>{formatAttemptDate(attempt)}</td>
+                        <td>{problemText.category}</td>
+                        <td>{problemText.prompt || attempt.problemId}</td>
+                        <td>{getAttemptResult(attempt)}</td>
+                      </tr>
+                    );
+                  }) : (
+                    <tr>
+                      <td colSpan="4">최근 활동 기록이 없습니다.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </section>
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
+function PrintMetric({ label, value, detail = "" }) {
+  return (
+    <div className="print-metric">
+      <span>{label}</span>
+      <strong>{value}</strong>
+      {detail && <small>{detail}</small>}
+    </div>
+  );
+}
+
+function AdminAuditLog({ members, attempts, auditLogs }) {
   const [query, setQuery] = useState("");
-  const rows = attempts.map((attempt) => {
+  const attemptRows = attempts.map((attempt) => {
     const member = members.find((item) => item.uid === attempt.uid);
     const problemText = getProblemText(attempt);
     return {
-      id: attempt.id,
+      id: `attempt-${attempt.id}`,
       date: formatAttemptDate(attempt),
+      time: getAttemptTime(attempt),
       student: member ? formatAdminMemberName(member, members) : "학생",
       category: problemText.category,
       problem: problemText.prompt || `${attempt.nodeId} · ${attempt.problemId}`,
@@ -1839,6 +2145,22 @@ function AdminAuditLog({ members, attempts }) {
       help: formatHelpUsed(attempt),
     };
   });
+  const auditRows = (auditLogs || []).map((log) => {
+    const member = members.find((item) => item.uid === log.uid);
+    return {
+      id: `audit-${log.id}`,
+      date: formatLogDate(log),
+      time: getLogTime(log),
+      student: member ? formatAdminMemberName(member, members) : log.displayName || log.email || log.uid || "사용자",
+      category: getAuditCategoryLabel(log),
+      problem: log.message || getAuditActionLabel(log.action),
+      answer: "-",
+      result: getAuditActionLabel(log.action),
+      resultClass: log.category === "auth" ? "positive" : "",
+      help: formatAuditMetadata(log),
+    };
+  });
+  const rows = [...attemptRows, ...auditRows].sort((a, b) => (b.time || 0) - (a.time || 0));
   const normalizedQuery = query.trim().toLowerCase();
   const filteredRows = normalizedQuery
     ? rows.filter((row) => Object.values(row).join(" ").toLowerCase().includes(normalizedQuery))
@@ -1995,11 +2317,54 @@ function groupRowsForTokenChart(rows, labelFn) {
 }
 
 function formatLogDate(log) {
-  const source = log.createdAt;
-  if (!source) return "-";
-  const time = typeof source.seconds === "number" ? source.seconds * 1000 : new Date(source).getTime();
+  const time = getLogTime(log);
   if (!time) return "-";
   return new Intl.DateTimeFormat("ko-KR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(time));
+}
+
+function getLogTime(log) {
+  const source = log.createdAt;
+  if (!source) return 0;
+  if (typeof source.seconds === "number") return source.seconds * 1000;
+  if (typeof source.toMillis === "function") return source.toMillis();
+  if (source instanceof Date) return source.getTime();
+  if (typeof source === "string") return new Date(source).getTime() || 0;
+  if (typeof source === "number") return source;
+  return 0;
+}
+
+function getAuditActionLabel(action) {
+  const labels = {
+    login: "로그인",
+    logout: "로그아웃",
+    manager_access_denied: "관리자 접근 거부",
+    parent_view: "자녀 학습 조회",
+    problem_wrong: "오답 제출",
+    problem_saved: "풀이 저장",
+    problem_completed: "해결 완료",
+    ai_guide: "AI 가이드",
+  };
+  return labels[action] || action || "-";
+}
+
+function getAuditCategoryLabel(log) {
+  const labels = {
+    auth: "로그인/계정",
+    parent: "학부모",
+    learning: getSkillTitle(log.metadata?.nodeId) || "문제 풀이",
+    ai: "AI 사용",
+    system: "시스템",
+  };
+  return labels[log.category] || log.category || "감사";
+}
+
+function formatAuditMetadata(log) {
+  const metadata = log.metadata || {};
+  if (log.action === "parent_view") return `자녀 ${metadata.parentOf?.length || 0}명`;
+  if (log.action === "ai_guide") return metadata.totalTokens ? `${Number(metadata.totalTokens).toLocaleString()} 토큰` : "AI 사용";
+  if (log.category === "learning") return metadata.helpUsed?.length ? `${metadata.helpUsed.length}개 도움` : "-";
+  if (log.category === "auth") return metadata.role || log.role || "-";
+  return "-";
 }
 
 function getParentEmailsForStudent(studentUid, members) {
@@ -2250,19 +2615,26 @@ function buildTopSkillMetricChart(attempts, weightFn = () => 1, limit = 5) {
 }
 
 function buildRecentTrendChart(attempts) {
-  const datedAttempts = attempts.filter((attempt) => !attempt.restoredFromProfile && getAttemptTime(attempt));
+  const datedAttempts = attempts.filter((attempt) => getAttemptTime(attempt));
   const now = new Date();
   return Array.from({ length: 7 }, (_, index) => {
     const date = new Date(now);
     date.setDate(now.getDate() - (6 - index));
-    const key = date.toISOString().slice(0, 10);
+    const key = getLocalDateKey(date);
     const label = new Intl.DateTimeFormat("ko-KR", { month: "2-digit", day: "2-digit" }).format(date);
     const value = datedAttempts.filter((attempt) => {
       const time = getAttemptTime(attempt);
-      return time && new Date(time).toISOString().slice(0, 10) === key;
+      return time && getLocalDateKey(new Date(time)) === key;
     }).length;
     return { label, value };
   });
+}
+
+function getLocalDateKey(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function ParentInsightPanel({ profile, members, attempts, onRegisterChild }) {
@@ -2553,6 +2925,7 @@ function buildFallbackAttemptsForChildren(children, attempts) {
     const missingCount = Math.max(0, solvedTarget - currentSolved.size);
     if (!missingCount) continue;
     const orderedProblems = generatedProblems.filter((problem) => !currentSolved.has(`${problem.nodeId}-${problem.id}`));
+    const fallbackTime = child.lastSolvedAt || child.lastActivityAt || child.updatedAt || child.lastSeenAt || child.createdAt || null;
     orderedProblems.slice(0, missingCount).forEach((problem, index) => {
       const key = `${child.uid}-${problem.nodeId}-${problem.id}`;
       if (existing.has(key)) return;
@@ -2569,8 +2942,8 @@ function buildFallbackAttemptsForChildren(children, attempts) {
         status: "completed",
         completed: true,
         restoredFromProfile: true,
-        createdAt: null,
-        completedAt: null,
+        createdAt: fallbackTime,
+        completedAt: fallbackTime,
         sortIndex: index,
       });
     });
@@ -2704,7 +3077,10 @@ function getAttemptTime(attempt) {
   const source = attempt.completedAt || attempt.createdAt;
   if (!source) return 0;
   if (typeof source.seconds === "number") return source.seconds * 1000;
+  if (typeof source.toMillis === "function") return source.toMillis();
+  if (source instanceof Date) return source.getTime();
   if (typeof source === "string") return new Date(source).getTime() || 0;
+  if (typeof source === "number") return source;
   return 0;
 }
 

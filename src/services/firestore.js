@@ -264,6 +264,37 @@ export async function loadAiUsageLogsForUsers(userIds) {
   return results.sort((a, b) => Number(b.createdAt?.seconds || 0) - Number(a.createdAt?.seconds || 0));
 }
 
+export async function loadAuditLogsForUsers(userIds) {
+  if (!userIds.length) return [];
+  const chunks = [];
+  for (let index = 0; index < userIds.length; index += 10) {
+    chunks.push(userIds.slice(index, index + 10));
+  }
+  const results = [];
+  for (const chunk of chunks) {
+    const q = query(collection(db, "auditLogs"), where("uid", "in", chunk), limit(500));
+    const snap = await getDocs(q);
+    results.push(...snap.docs.map((item) => ({ id: item.id, ...item.data() })));
+  }
+  return results.sort((a, b) => Number(b.createdAt?.seconds || 0) - Number(a.createdAt?.seconds || 0));
+}
+
+export async function saveAuditLog({ user, action, category = "system", message = "", metadata = {} }) {
+  if (!user?.uid || !action) return;
+  const auditRef = doc(collection(db, "auditLogs"));
+  await setDoc(auditRef, {
+    uid: user.uid,
+    email: user.email || "",
+    displayName: user.displayName || "",
+    role: metadata.role || "",
+    action,
+    category,
+    message,
+    metadata,
+    createdAt: serverTimestamp(),
+  });
+}
+
 export async function saveAiUsageLog({ user, problem, action, usage, model }) {
   if (!usage) return;
   const usageRef = doc(collection(db, "aiUsageLogs"));
@@ -279,6 +310,18 @@ export async function saveAiUsageLog({ user, problem, action, usage, model }) {
     totalTokens: Number(usage.totalTokens) || 0,
     createdAt: serverTimestamp(),
   });
+  saveAuditLog({
+    user,
+    action: "ai_guide",
+    category: "ai",
+    message: `${action} 사용`,
+    metadata: {
+      problemId: problem?.id || "",
+      nodeId: problem?.nodeId || "",
+      model: model || "",
+      totalTokens: Number(usage.totalTokens) || 0,
+    },
+  }).catch((error) => console.error("Audit AI log failed:", error));
 }
 
 export async function saveAttempt({ user, problem, strokes, guide, isCorrect, status, alreadySolved, xpMultiplier = 1, submittedAnswer = "", helpUsed = [] }) {
@@ -306,6 +349,21 @@ export async function saveAttempt({ user, problem, strokes, guide, isCorrect, st
     createdAt: serverTimestamp(),
     completedAt: completed ? serverTimestamp() : null,
   });
+  saveAuditLog({
+    user,
+    action: completed ? "problem_completed" : wrong ? "problem_wrong" : "problem_saved",
+    category: "learning",
+    message: completed ? "문제 해결 완료" : wrong ? "오답 제출" : "풀이 저장",
+    metadata: {
+      problemId: problem.id,
+      nodeId: problem.nodeId,
+      problemTitle: problem.title || problem.id,
+      submittedAnswer,
+      status,
+      xpGain,
+      helpUsed,
+    },
+  }).catch((error) => console.error("Audit attempt log failed:", error));
 
   const userRef = doc(db, "users", user.uid);
   await updateDoc(userRef, {
