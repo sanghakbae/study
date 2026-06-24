@@ -1,10 +1,8 @@
-@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css");
-
 :root {
   color-scheme: light;
   font-family:
-    "Pretendard Variable", Pretendard, "Noto Sans KR", "Apple SD Gothic Neo",
-    "Malgun Gothic", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont,
+    system-ui, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo",
+    "Noto Sans KR", "Malgun Gothic", "Segoe UI",
     sans-serif;
   background: #eef2f7;
   color: #111827;
@@ -28,8 +26,8 @@ body {
   overflow: hidden;
   overscroll-behavior: none;
   font-family:
-    "Pretendard Variable", Pretendard, "Noto Sans KR", "Apple SD Gothic Neo",
-    "Malgun Gothic", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont,
+    system-ui, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo",
+    "Noto Sans KR", "Malgun Gothic", "Segoe UI",
     sans-serif;
 }
 
@@ -1401,11 +1399,16 @@ button:disabled {
 
 /* completed */
 .skill-node.completed {
-  border-color: #0d6644;
-  color: #2dd4a0;
+  border-color: #22c55e;
+  color: #ecfdf5;
   cursor: pointer;
-  background: linear-gradient(135deg, #071a10 0%, #0d1320 100%);
-  box-shadow: inset 0 1px 0 rgba(45,212,160,0.06), 0 0 8px rgba(13,102,68,0.3), 0 2px 8px rgba(0,0,0,0.5);
+  background:
+    linear-gradient(135deg, rgba(34,197,94,0.95) 0%, rgba(13,148,136,0.92) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.24),
+    0 0 0 1px rgba(187,247,208,0.25),
+    0 0 16px rgba(34,197,94,0.35),
+    0 2px 8px rgba(0,0,0,0.45);
 }
 
 .skill-node.completed:hover {
@@ -1474,7 +1477,14 @@ button:disabled {
 }
 
 .skill-node em.done {
-  color: #2dd4a0;
+  min-width: 28px;
+  padding: 2px 5px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.92);
+  color: #047857;
+  font-size: 0.48rem;
+  font-weight: 950;
+  text-align: center;
 }
 
 .skill-node small {
@@ -1513,8 +1523,41 @@ button:disabled {
 
 @media (max-width: 900px) {
   .skill-board {
-    grid-template-columns: repeat(6, minmax(80px, 1fr));
+    --skill-node-font-size: 0.62rem;
+    --skill-icon-font-size: 0.72rem;
+    grid-template-columns: repeat(6, minmax(82px, 1fr));
     overflow-x: auto;
+  }
+
+  .skill-node {
+    gap: 2px;
+    padding: 2px 3px;
+  }
+
+  .skill-node strong {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    line-height: 1.08;
+    letter-spacing: 0;
+  }
+
+  .skill-node em,
+  .skill-node small {
+    font-size: 0.42rem;
+    letter-spacing: 0;
+  }
+
+  .skill-node em.done {
+    min-width: 20px;
+    padding: 1px 3px;
+    font-size: 0.4rem;
+  }
+
+  .skill-icon {
+    width: 1rem;
+    max-width: 1rem;
   }
 }
 
@@ -1563,7 +1606,11 @@ button:disabled {
 
 /* active states override (pending/completed/selected stay universal) */
 .skill-node.pending { border-color: #c07c20 !important; color: #f5a623 !important; background: linear-gradient(135deg, #1e1608, #0d1320) !important; }
-.skill-node.completed { border-color: #0d6644 !important; color: #2dd4a0 !important; background: linear-gradient(135deg, #071a10, #0d1320) !important; }
+.skill-node.completed {
+  border-color: #22c55e !important;
+  color: #ecfdf5 !important;
+  background: linear-gradient(135deg, #16a34a, #0f766e) !important;
+}
 /* selected override handled above — keep stage-specific colors from overriding */
 
 /* ── My stats card ── */
@@ -2637,6 +2684,10 @@ li:nth-child(3) .rank-num { color: #b45309; }
   border-color: #38bdf8;
 }
 
+.problem-header select option.solved-problem-option {
+  color: #9ca3af;
+}
+
 .problem-card {
   margin: 8px 0;
   padding: 14px 16px;
@@ -2852,12 +2903,12 @@ li:nth-child(3) .rank-num { color: #b45309; }
   min-height: 0;
   flex: 1;
   overflow: auto;
-  padding: 5px;
+  padding: clamp(8px, 0.8vw, 11px);
   border-radius: 5px;
   background: #f8fafc;
   border: 1px solid #e8ecf3;
-  line-height: 1.1;
-  font-size: clamp(0.72rem, 0.45rem + 0.55vw, 1.02rem);
+  line-height: 1.36;
+  font-size: clamp(0.7rem, 0.32rem + 0.38vw, 0.86rem);
   color: #374151;
   box-shadow: inset 0 2px 6px rgba(15,23,42,0.03);
 }
@@ -2867,25 +2918,48 @@ li:nth-child(3) .rank-num { color: #b45309; }
 .guide-output ol,
 .guide-output pre,
 .guide-output blockquote {
-  margin: 0 0 5px;
+  margin: 0 0 8px;
 }
 
 .guide-output h1,
 .guide-output h2,
 .guide-output h3,
 .guide-output h4 {
-  margin: 7px 0 4px;
+  margin: 14px 0 6px;
   line-height: 1.15;
-  font-size: clamp(0.82rem, 0.55rem + 0.65vw, 1.15rem);
+  color: #111827;
+  font-size: clamp(0.76rem, 0.36rem + 0.38vw, 0.92rem);
+}
+
+.guide-output h3:first-child,
+.guide-output h4:first-child {
+  margin-top: 0;
 }
 
 .guide-output ul,
 .guide-output ol {
-  padding-left: 18px;
+  padding-left: 16px;
 }
 
 .guide-output li {
-  margin: 0 0 2px;
+  margin: 0 0 5px;
+}
+
+.guide-output h3 {
+  padding-bottom: 4px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.guide-output h4 {
+  color: #334155;
+  font-weight: 900;
+  padding-top: 8px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.guide-output h4:first-child {
+  padding-top: 0;
+  border-top: 0;
 }
 
 .guide-output code {
@@ -2893,7 +2967,7 @@ li:nth-child(3) .rank-num { color: #b45309; }
   border-radius: 5px;
   background: #e2e8f0;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: clamp(0.68rem, 0.42rem + 0.5vw, 0.96rem);
+  font-size: 0.9em;
 }
 
 .guide-output pre {
@@ -2963,7 +3037,7 @@ li:nth-child(3) .rank-num { color: #b45309; }
 
 .answer-input-row input {
   flex: 1;
-  height: 24px;
+  height: 29px;
   border: 1.5px solid #e2e8f0;
   border-radius: 5px;
   padding: 0 10px;
@@ -2982,7 +3056,7 @@ li:nth-child(3) .rank-num { color: #b45309; }
 }
 
 .answer-confirm-btn {
-  height: 24px;
+  height: 29px;
   padding: 0 12px;
   border-radius: 5px;
   background: linear-gradient(135deg, #1e293b, #0f172a);
@@ -3343,6 +3417,25 @@ li:nth-child(3) .rank-num { color: #b45309; }
     font-size: 75%;
   }
 
+  .login-panel {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .login-panel p,
+  .role-grid span,
+  .grade-picker small {
+    font-size: 12px;
+    line-height: 1.45;
+  }
+
+  .role-grid strong,
+  .grade-picker span,
+  .google-button,
+  .onboarding-submit {
+    font-size: 12px;
+  }
+
   .app-shell {
     grid-template-rows: auto auto minmax(0, 1fr);
     gap: 6px;
@@ -3614,7 +3707,22 @@ li:nth-child(3) .rank-num { color: #b45309; }
     width: min(100%, 520px);
     max-width: calc(100vw - 32px);
     margin: 0 auto;
-    padding: 24px 18px;
+    gap: 12px;
+    padding: 22px 16px;
+  }
+
+  .login-panel h1 {
+    font-size: clamp(1.65rem, 8vw, 2.15rem);
+    line-height: 1.06;
+  }
+
+  .role-grid {
+    gap: 8px;
+  }
+
+  .role-grid button {
+    min-height: 96px;
+    padding: 12px;
   }
 
   .app-shell {
@@ -3759,15 +3867,27 @@ li:nth-child(3) .rank-num { color: #b45309; }
   }
 
   .skill-node strong {
-    font-size: 0.48rem !important;
-    line-height: 1;
+    font-size: 0.52rem !important;
+    line-height: 1.05;
     letter-spacing: 0;
   }
 
   .skill-icon {
-    width: 0.9rem;
-    max-width: 0.9rem;
-    font-size: 0.62rem !important;
+    width: 0.8rem;
+    max-width: 0.8rem;
+    font-size: 0.58rem !important;
+  }
+
+  .skill-node em,
+  .skill-node small {
+    font-size: 0.36rem !important;
+    letter-spacing: 0;
+  }
+
+  .skill-node em.done {
+    min-width: 18px;
+    padding: 1px 2px;
+    font-size: 0.34rem !important;
   }
 
   .workspace {

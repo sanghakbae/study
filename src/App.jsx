@@ -1,6 +1,4 @@
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import {
   Award,
   BookOpen,
@@ -74,7 +72,7 @@ const guideActions = [
   { key: "check", label: "AI 가이드", icon: ShieldCheck },
   { key: "next", label: "풀이 방향", icon: ChevronRight, xpPenalty: true },
   { key: "hint", label: "힌트 받기", icon: HelpCircle, xpPenalty: true },
-  { key: "concept", label: "개념 보기", icon: BookOpen },
+  { key: "concept", label: "개념 학습", icon: BookOpen },
 ];
 
 const googleChatWebhookUrl =
@@ -92,6 +90,12 @@ function getProblemOrder(problem) {
 
 function sortProblemsByNumber(problems) {
   return [...problems].sort((a, b) => getProblemOrder(a) - getProblemOrder(b) || String(a.id).localeCompare(String(b.id)));
+}
+
+function getFreshProblemGuide(problem, field) {
+  if (!problem) return "";
+  const generated = problemLookup.get(problem.id);
+  return generated?.[field] || problem?.[field] || "";
 }
 
 function chooseProblemId({ problems, savedLocation, skillId, solvedIds = [] }) {
@@ -172,6 +176,11 @@ export default function App() {
   );
 
   useEffect(() => {
+    if (!selectedProblem?.id) return;
+    setGuide(getFreshProblemGuide(selectedProblem, "conceptGuide") || `## 개념 학습\n- ${selectedProblem.concept}`);
+  }, [selectedProblem?.id]);
+
+  useEffect(() => {
     localStorage.removeItem("study-note-ratio");
     return onAuthStateChanged(auth, async (nextUser) => {
       setAuthReady(false);
@@ -241,7 +250,6 @@ export default function App() {
         const nextProblemId = chooseProblemId({ problems: nextProblems, savedLocation, skillId: selectedSkillId, solvedIds });
         setProblems(nextProblems);
         setSelectedProblemId(nextProblemId);
-        setGuide("새 문제를 열었습니다. 풀이를 쓰고 필요한 순간에 가이드를 요청하세요.");
       })
       .catch((error) => {
         console.error(error);
@@ -381,19 +389,19 @@ export default function App() {
   async function handleGuide(action) {
     if (action.key === "next") {
       trackHintUse(selectedProblem.id, action.key);
-      setGuide(selectedProblem.nextStep || `## 다음 한 단계\n- ${selectedProblem.concept}`);
+      setGuide(getFreshProblemGuide(selectedProblem, "nextStep") || `## 다음 한 단계\n- ${selectedProblem.concept}`);
       return;
     }
 
     if (action.key === "hint") {
       trackHintUse(selectedProblem.id, action.key);
-      setGuide(selectedProblem.hint || `## 힌트\n- ${selectedProblem.concept}`);
+      setGuide(getFreshProblemGuide(selectedProblem, "hint") || `## 힌트\n- ${selectedProblem.concept}`);
       return;
     }
 
     if (action.key === "concept") {
-      // 개념 보기는 기본 제공이므로 XP 패널티 집계(trackHintUse)에 넣지 않는다.
-      setGuide(selectedProblem.conceptGuide || `## 개념 보기\n- ${selectedProblem.concept}`);
+      // 개념 학습은 기본 제공이므로 XP 패널티 집계(trackHintUse)에 넣지 않는다.
+      setGuide(getFreshProblemGuide(selectedProblem, "conceptGuide") || `## 개념 학습\n- ${selectedProblem.concept}`);
       return;
     }
 
@@ -407,7 +415,7 @@ export default function App() {
     const reviewKey = `${selectedProblem.id}`;
     const usedCount = reviewCounts[reviewKey] || 0;
     if (usedCount >= 1) {
-      setGuide("## AI 가이드 사용 완료\n- AI 가이드는 문제당 1회만 사용할 수 있습니다.\n- 풀이 방향, 힌트, 개념 보기를 참고해서 다시 정리해 보세요.");
+      setGuide("## AI 가이드 사용 완료\n- AI 가이드는 문제당 1회만 사용할 수 있습니다.\n- 풀이 방향, 힌트, 개념 학습을 참고해서 다시 정리해 보세요.");
       return;
     }
 
@@ -464,7 +472,6 @@ export default function App() {
     const nextProblem = problems.find((problem) => !solved.has(problem.id));
     if (nextProblem) {
       setSelectedProblemId(nextProblem.id);
-      setGuide("다음 문제로 이동했습니다. 풀이를 완료해야 다음 문제로 넘어갑니다.");
       return;
     }
     setGuide("이 스킬의 50문제를 모두 완료했습니다. 스킬 트리에서 다음 열린 스킬을 선택하세요.");
@@ -478,7 +485,7 @@ export default function App() {
     const alreadySolved = (solvedBySkill[problem.nodeId] || []).includes(problem.id);
     const hints = getGuidePenaltyCount(problem.id);
     const helpUsed = Array.isArray(hintUsed[problem.id]) ? hintUsed[problem.id] : [];
-    // 힌트 받기·풀이 방향만 XP 5%씩 차감한다. 개념 보기는 기본 제공이라 차감하지 않는다.
+    // 힌트 받기·풀이 방향만 XP 5%씩 차감한다. 개념 학습은 기본 제공이라 차감하지 않는다.
     const xpMultiplier = Math.max(0.3, 1 - hints * 0.05);
 
     if (completed) {
@@ -852,7 +859,7 @@ function LoginGuideModal({ suppressChecked, onSuppressChange, onClose }) {
           <GuideStep
             type="helper"
             title="3. 막히면 도움 받기"
-            body="개념 보기는 기본 제공이라 언제든 무료예요. 풀이 방향·힌트를 쓰면 받을 XP가 5%씩 줄어요."
+            body="개념 학습은 기본 제공이라 언제든 무료예요. 풀이 방향·힌트를 쓰면 받을 XP가 5%씩 줄어요."
           />
         </div>
 
@@ -1217,7 +1224,7 @@ function SkillTree({ skills, selectedSkillId, completedSkills, solvedBySkill, un
                     >
                       <span className="skill-icon">{skillIcons[skill.id] || "∘"}</span>
                       <strong>{skill.title}</strong>
-                                            {completed && !selected && <em className="done">✓</em>}
+                      {completed && !selected && <em className="done">완료</em>}
                     </button>
                   </div>
                 );
@@ -1581,7 +1588,7 @@ function AdminProblemManager({ onSaveProblem }) {
               <th className="col-answer">정답</th>
               <th className="col-problem">힌트</th>
               <th className="col-problem">풀이 방향</th>
-              <th className="col-problem">개념 다시보기</th>
+              <th className="col-problem">개념 학습</th>
               <th className="col-status">저장</th>
             </tr>
           </thead>
@@ -3035,10 +3042,6 @@ const NotebookPanel = forwardRef(function NotebookPanel(
   }));
 
   const solvedSet = new Set(solvedIds);
-  // 이미 푼 문제는 목록에서 숨긴다. 현재 보고 있는 문제만 예외로 남겨 select가 깨지지 않게 한다.
-  const visibleProblems = problems.filter(
-    (problem) => !solvedSet.has(problem.id) || problem.id === selectedProblemId,
-  );
 
   return (
     <section className={`notebook-panel ${mobileSolveOpen ? "" : "mobile-solve-collapsed"}`}>
@@ -3050,8 +3053,8 @@ const NotebookPanel = forwardRef(function NotebookPanel(
         </div>
         <div className="problem-header-actions">
           <select value={selectedProblemId} onChange={(event) => setSelectedProblemId(event.target.value)}>
-            {visibleProblems.map((problem) => (
-              <option value={problem.id} key={problem.id}>
+            {problems.map((problem) => (
+              <option className={solvedSet.has(problem.id) ? "solved-problem-option" : ""} value={problem.id} key={problem.id}>
                 {solvedSet.has(problem.id) ? `✓ ${problem.title}` : problem.title}
               </option>
             ))}
@@ -3091,16 +3094,16 @@ const NotebookPanel = forwardRef(function NotebookPanel(
             aria-pressed={showConcept}
           >
             <BookOpen size={14} />
-            {showConcept ? "개념 닫기" : "개념 보기"}
+            {showConcept ? "개념 닫기" : "개념 학습"}
           </button>
         </div>
         <p>{selectedProblem?.prompt}</p>
         <ProblemAssets assets={selectedProblem?.assets || []} />
         {showConcept && (
           <div className="concept-inline">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-              {selectedProblem?.conceptGuide || `## 개념 보기\n- ${selectedProblem?.concept || "이 문제의 핵심 개념을 정리해 보세요."}`}
-            </ReactMarkdown>
+            <MarkdownContent>
+              {getFreshProblemGuide(selectedProblem, "conceptGuide") || `## 개념 학습\n- ${selectedProblem?.concept || "이 문제의 핵심 개념을 정리해 보세요."}`}
+            </MarkdownContent>
           </div>
         )}
       </article>
@@ -3234,6 +3237,7 @@ function ProblemAssets({ assets }) {
 
 function GuidePanel({ problem, guide, guideLoading, reviewCount, answerCheck, isAdmin, onGuide }) {
   const canReview = answerCheck?.status === "wrong";
+  const cleanedGuide = cleanGuideMarkdown(guide);
 
   return (
     <aside className="guide-panel">
@@ -3260,7 +3264,7 @@ function GuidePanel({ problem, guide, guideLoading, reviewCount, answerCheck, is
 
       <div className="guide-output">
         {guideLoading && <Loader2 className="spin" size={20} />}
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{guide}</ReactMarkdown>
+        <MarkdownContent>{cleanedGuide}</MarkdownContent>
       </div>
 
       {isAdmin && (
@@ -3277,4 +3281,85 @@ function GuidePanel({ problem, guide, guideLoading, reviewCount, answerCheck, is
       </div>
     </aside>
   );
+}
+
+function cleanGuideMarkdown(markdown) {
+  return String(markdown || "")
+    .replace(/^#{1,4}\s*개념\s*(다시보기|보기|학습)\s*\n+/i, "")
+    .replace(/^개념\s*(다시보기|보기|학습)\s*\n+/i, "")
+    .replace(/^\*\*[^*\n]+·[^*\n]+\*\*\s*\n+/i, "")
+    .trim();
+}
+
+function MarkdownContent({ children }) {
+  const lines = String(children || "").split(/\r?\n/);
+  const blocks = [];
+  let index = 0;
+
+  while (index < lines.length) {
+    const raw = lines[index];
+    const line = raw.trim();
+    if (!line) {
+      index += 1;
+      continue;
+    }
+
+    const heading = line.match(/^(#{1,4})\s+(.+)$/);
+    if (heading) {
+      const Tag = `h${Math.min(4, heading[1].length + 1)}`;
+      blocks.push(<Tag key={`h-${index}`}>{renderInlineMarkdown(heading[2])}</Tag>);
+      index += 1;
+      continue;
+    }
+
+    if (/^[-*]\s+/.test(line)) {
+      const items = [];
+      while (index < lines.length && /^[-*]\s+/.test(lines[index].trim())) {
+        items.push(lines[index].trim().replace(/^[-*]\s+/, ""));
+        index += 1;
+      }
+      blocks.push(
+        <ul key={`ul-${index}`}>
+          {items.map((item, itemIndex) => (
+            <li key={itemIndex}>{renderInlineMarkdown(item)}</li>
+          ))}
+        </ul>,
+      );
+      continue;
+    }
+
+    if (/^\d+\.\s+/.test(line)) {
+      const items = [];
+      while (index < lines.length && /^\d+\.\s+/.test(lines[index].trim())) {
+        items.push(lines[index].trim().replace(/^\d+\.\s+/, ""));
+        index += 1;
+      }
+      blocks.push(
+        <ol key={`ol-${index}`}>
+          {items.map((item, itemIndex) => (
+            <li key={itemIndex}>{renderInlineMarkdown(item)}</li>
+          ))}
+        </ol>,
+      );
+      continue;
+    }
+
+    blocks.push(<p key={`p-${index}`}>{renderInlineMarkdown(line)}</p>);
+    index += 1;
+  }
+
+  return blocks;
+}
+
+function renderInlineMarkdown(text) {
+  const parts = String(text || "").split(/(`[^`]+`|\*\*[^*]+\*\*)/g).filter(Boolean);
+  return parts.map((part, index) => {
+    if (part.startsWith("`") && part.endsWith("`")) {
+      return <code key={index}>{part.slice(1, -1)}</code>;
+    }
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return <strong key={index}>{part.slice(2, -2)}</strong>;
+    }
+    return part;
+  });
 }
