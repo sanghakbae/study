@@ -16,7 +16,6 @@ const mc = (correct, wrongs, concept) => {
 const isMC = (n) => n % 5 === 1 || n % 5 === 4;
 const T = (n, types) => (n - 1) % types;
 
-export const generatedProblems = curriculumNodes.flatMap((skill) => generateProblemsForSkill(skill));
 export function getProblemsForSkill(skill) { return skill ? generateProblemsForSkill(skill) : []; }
 export function generateProblemsForSkill(skill) {
   return Array.from({ length: 50 }, (_, i) => buildProblem(skill, i + 1));
@@ -1304,3 +1303,7 @@ function concept(skill, p) {
     `- 단위·형태 불일치 (분수↔소수 등)`,
   ].join("\n");
 }
+
+// TERMS 등 모든 선언이 초기화된 뒤에 즉시 평가해야 하므로 파일 끝에서 생성한다.
+// (top-level에서 생성하면 아래 const TERMS의 TDZ를 건드려 모듈 로드가 실패한다.)
+export const generatedProblems = curriculumNodes.flatMap((skill) => generateProblemsForSkill(skill));
