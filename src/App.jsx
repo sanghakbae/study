@@ -72,8 +72,8 @@ const fallbackUser = {
 
 const guideActions = [
   { key: "check", label: "AI 가이드", icon: ShieldCheck },
-  { key: "next", label: "풀이 방향", icon: ChevronRight },
-  { key: "hint", label: "힌트 받기", icon: HelpCircle },
+  { key: "next", label: "풀이 방향", icon: ChevronRight, xpPenalty: true },
+  { key: "hint", label: "힌트 받기", icon: HelpCircle, xpPenalty: true },
   { key: "concept", label: "개념 보기", icon: BookOpen },
 ];
 
@@ -377,7 +377,7 @@ export default function App() {
     }
 
     if (action.key === "concept") {
-      trackHintUse(selectedProblem.id, action.key);
+      // 개념 보기는 기본 제공이므로 XP 패널티 집계(trackHintUse)에 넣지 않는다.
       setGuide(selectedProblem.conceptGuide || `## 개념 보기\n- ${selectedProblem.concept}`);
       return;
     }
@@ -461,9 +461,10 @@ export default function App() {
     setSaving(true);
 
     const alreadySolved = (solvedBySkill[problem.nodeId] || []).includes(problem.id);
+    const hints = getGuidePenaltyCount(problem.id);
     const helpUsed = Array.isArray(hintUsed[problem.id]) ? hintUsed[problem.id] : [];
-    // 힌트/풀이 방향/개념 보기는 기본 제공이라 XP를 깎지 않는다.
-    const xpMultiplier = 1;
+    // 힌트 받기·풀이 방향만 XP 5%씩 차감한다. 개념 보기는 기본 제공이라 차감하지 않는다.
+    const xpMultiplier = Math.max(0.3, 1 - hints * 0.05);
 
     if (completed) {
       markProblemCompleted(problem.id, problem.nodeId);
@@ -838,7 +839,7 @@ function LoginGuideModal({ suppressChecked, onSuppressChange, onClose }) {
           <GuideStep
             type="helper"
             title="3. 막히면 도움 받기"
-            body="풀이 방향, 힌트, 개념 보기를 눌러요. 모두 기본 제공이라 XP가 줄지 않아요."
+            body="개념 보기는 기본 제공이라 언제든 무료예요. 풀이 방향·힌트를 쓰면 받을 XP가 5%씩 줄어요."
           />
         </div>
 
@@ -3075,7 +3076,14 @@ const NotebookPanel = forwardRef(function NotebookPanel(
       <article className="problem-card">
         <div className="problem-card-meta">
           <span>{"★".repeat(selectedProblem?.difficulty || 1)}{"☆".repeat(Math.max(0, 5 - (selectedProblem?.difficulty || 1)))}</span>
-          <span className="problem-xp">+{30 + (selectedProblem?.difficulty || 1) * 10} XP</span>
+          {(() => {
+            const baseXp = 30 + (selectedProblem?.difficulty || 1) * 10;
+            const mult = Math.max(0.3, 1 - (hintCount || 0) * 0.05);
+            const earnXp = Math.round(baseXp * mult);
+            return hintCount > 0
+              ? <span className="problem-xp penalty">+{earnXp} XP <s style={{opacity:0.5, fontSize:"0.75em"}}>{baseXp}</s> <small style={{color:"#f59e0b"}}>(-{Math.round((1-mult)*100)}%)</small></span>
+              : <span className="problem-xp">+{baseXp} XP</span>;
+          })()}
           <button
             type="button"
             className={`concept-inline-toggle ${showConcept ? "active" : ""}`}
@@ -3244,6 +3252,7 @@ function GuidePanel({ problem, guide, guideLoading, reviewCount, answerCheck, is
               <Icon size={17} />
               <span>{action.label}</span>
               {action.xpPenalty && <small>XP -5%</small>}
+              {action.key === "concept" && <small className="free">기본 제공</small>}
             </button>
           );
         })}

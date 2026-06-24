@@ -2852,6 +2852,11 @@ li:nth-child(3) .rank-num { color: #b45309; }
   text-align: right;
 }
 
+.guide-actions small.free {
+  color: #047857;
+  font-weight: 700;
+}
+
 .guide-output {
   min-height: 0;
   flex: 1;
