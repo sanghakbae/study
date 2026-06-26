@@ -98,6 +98,27 @@ const gradeOptions = ["중1", "중2", "중3", "고1", "고2", "고3"];
 const problemLookup = new Map(generatedProblems.map((problem) => [problem.id, problem]));
 const defaultSkillId = "m1-numbers";
 const defaultProblemId = "p-m1-numbers-01";
+const skillOrder = new Map(curriculumNodes.map((skill, index) => [skill.id, index]));
+
+function sortSkillsByCurriculumOrder(skillList = []) {
+  return [...skillList].sort((a, b) => {
+    const orderA = skillOrder.get(a.id) ?? Number.MAX_SAFE_INTEGER;
+    const orderB = skillOrder.get(b.id) ?? Number.MAX_SAFE_INTEGER;
+    if (orderA !== orderB) return orderA - orderB;
+    return String(a.title || a.id).localeCompare(String(b.title || b.id), "ko");
+  });
+}
+
+function getSequentialUnlockedSkills(skillList = [], completedSkillIds = []) {
+  const completed = new Set(completedSkillIds);
+  const unlocked = new Set(completedSkillIds);
+  for (const skill of sortSkillsByCurriculumOrder(skillList)) {
+    if (completed.has(skill.id)) continue;
+    unlocked.add(skill.id);
+    break;
+  }
+  return unlocked;
+}
 
 // 정답 비교용 정규화: 공백·괄호 제거, 유니코드 마이너스 통일, 소문자화.
 export function normalizeMathAnswer(value) {
@@ -204,6 +225,7 @@ export default function App() {
   const [guideSuppressChecked, setGuideSuppressChecked] = useState(false);
   const [deployRefreshing, setDeployRefreshing] = useState(false);
   const [rankingModalOpen, setRankingModalOpen] = useState(false);
+  const [wrongNotebookModalOpen, setWrongNotebookModalOpen] = useState(false);
   const [examUnlockNotice, setExamUnlockNotice] = useState(null);
   const notebookRef = useRef(null);
   const workspaceRef = useRef(null);
@@ -407,7 +429,7 @@ export default function App() {
       loadLeaderboard(),
       uid ? loadProgressForUser(uid) : Promise.resolve({}),
     ]);
-    if (loadedSkills.length) setSkills(loadedSkills);
+    if (loadedSkills.length) setSkills(sortSkillsByCurriculumOrder(loadedSkills));
     setLeaderboard(loadedLeaders.filter((u) => u.role === "student" && u.onboardingComplete && !u.isMock));
     let me = loadedLeaders.find((item) => item.uid === uid);
     if (!me && uid) {
@@ -420,9 +442,17 @@ export default function App() {
   async function refreshMembers(nextProfile = profile) {
     if (!user || !["admin", "parents"].includes(nextProfile.role)) {
       setMembers([]);
-      setActivityAttempts([]);
       setAiUsageLogs([]);
       setAuditLogs([]);
+      if (user && (nextProfile.role || "student") === "student") {
+        const [attempts, progressDocs] = await Promise.all([
+          loadAttemptsForUsers([user.uid]),
+          loadProgressForUsers([user.uid]),
+        ]);
+        setActivityAttempts(mergeAttemptsWithProgress(attempts, progressDocs));
+      } else {
+        setActivityAttempts([]);
+      }
       return;
     }
 
@@ -800,11 +830,7 @@ export default function App() {
   }, [skills, solvedBySkill]);
 
   const unlockedSkills = useMemo(() => {
-    return new Set(
-      skills
-        .filter((skill) => skill.id === "m1-numbers" || skill.prereq.every((id) => completedSkills.includes(id)))
-        .map((skill) => skill.id),
-    );
+    return getSequentialUnlockedSkills(skills, completedSkills);
   }, [skills, completedSkills]);
 
   const isStudentProfile = (profile.role || "student") === "student";
@@ -818,16 +844,6 @@ export default function App() {
   const availableExamList = visibleExamRows.flatMap((row) =>
     [row.mid, row.final].filter((exam) => exam.status === "available"),
   );
-  const dailyGoalTarget = 5;
-  const todaySolvedCount = useMemo(() => {
-    if (!isStudentProfile) return 0;
-    const todayKey = getLocalDateKey(new Date());
-    return activityAttempts.filter((attempt) =>
-      attempt.uid === user?.uid
-      && attempt.completed
-      && getLocalDateKey(new Date(getAttemptTime(attempt) || 0)) === todayKey
-    ).length;
-  }, [activityAttempts, user?.uid, isStudentProfile]);
   const wrongNotebookItems = useMemo(
     () => (isStudentProfile ? buildWrongNotebookItems(activityAttempts.filter((attempt) => attempt.uid === user?.uid), solvedBySkill) : []),
     [activityAttempts, solvedBySkill, user?.uid, isStudentProfile],
@@ -859,6 +875,7 @@ export default function App() {
     if (!nodeId || !problemId) return;
     setSelectedSkillId(nodeId);
     setSelectedProblemId(problemId);
+    setWrongNotebookModalOpen(false);
   }
 
   if (!authReady) {
@@ -958,6 +975,8 @@ export default function App() {
         user={user}
         profile={profile}
         rank={topbarRank || 0}
+        wrongCount={wrongNotebookItems.length}
+        onWrongNotebookClick={() => setWrongNotebookModalOpen(true)}
         onRankClick={() => setRankingModalOpen(true)}
         onLogout={handleLogout}
       />
@@ -1014,9 +1033,14 @@ export default function App() {
         />
       )}
       {rankingModalOpen && (
-        <RankingModal onClose={() => setRankingModalOpen(false)}>
+        <AppModal title="랭킹" icon={Crown} onClose={() => setRankingModalOpen(false)}>
           <Leaderboard leaders={leaderboard} currentUid={user.uid} profile={profile} />
-        </RankingModal>
+        </AppModal>
+      )}
+      {wrongNotebookModalOpen && (
+        <AppModal title="오답노트" icon={ClipboardList} onClose={() => setWrongNotebookModalOpen(false)}>
+          <WrongNotebookModalContent items={wrongNotebookItems} onSelectProblem={handleSelectProblem} />
+        </AppModal>
       )}
 
       <section className="dashboard-strip">
@@ -1034,17 +1058,10 @@ export default function App() {
 
       {visibleExamRows.length > 0 && <ExamCenter rows={visibleExamRows} onStart={handleStartExam} />}
 
-      <StudentStudySummary
-        goalTarget={dailyGoalTarget}
-        solvedToday={todaySolvedCount}
-        wrongItems={wrongNotebookItems}
-        onSelectProblem={handleSelectProblem}
-      />
-
       <section
         className="workspace"
         ref={workspaceRef}
-        style={{ gridTemplateColumns: `minmax(0, ${noteRatio}%) 12px minmax(0, 1fr)` }}
+        style={{ gridTemplateColumns: `minmax(0, ${noteRatio}%) 6px minmax(0, 1fr)` }}
       >
         <NotebookPanel
           ref={notebookRef}
@@ -1095,42 +1112,31 @@ export default function App() {
   );
 }
 
-// 스킬의 모든 문제를 완료하면 뜨는 축하 모달.
-function StudentStudySummary({ goalTarget, solvedToday, wrongItems, onSelectProblem }) {
-  const goalPct = Math.min(100, Math.round((solvedToday / Math.max(1, goalTarget)) * 100));
+function WrongNotebookModalContent({ items, onSelectProblem }) {
   return (
-    <section className="student-study-summary">
-      <div className="daily-goal-card">
-        <div>
-          <span>오늘의 목표</span>
-          <strong>{Math.min(solvedToday, goalTarget)} / {goalTarget}문제</strong>
-        </div>
-        <div className="daily-goal-track">
-          <i style={{ width: `${goalPct}%` }} />
-        </div>
-      </div>
-      <div className="wrong-note-card">
+    <div className="wrong-note-card modal-wrong-note">
+      {items.length ? (
+        <>
         <div className="wrong-note-head">
           <div>
-            <span>오답노트</span>
-            <strong>{wrongItems.length ? `${wrongItems.length}개 복습 대기` : "복습할 오답 없음"}</strong>
+            <span>복습 대기</span>
+            <strong>{items.length}개</strong>
           </div>
         </div>
-        {wrongItems.length ? (
-          <div className="wrong-note-list">
-            {wrongItems.slice(0, 3).map((item) => (
-              <button type="button" key={`${item.nodeId}-${item.problemId}`} onClick={() => onSelectProblem(item.nodeId, item.problemId)}>
-                <span>{item.category}</span>
-                <strong>{item.prompt || item.problemId}</strong>
-                <em>오답 {item.count}회</em>
-              </button>
-            ))}
-          </div>
-        ) : (
-          <p>틀린 문제는 자동으로 여기에 모입니다.</p>
-        )}
-      </div>
-    </section>
+        <div className="wrong-note-list">
+          {items.map((item) => (
+            <button type="button" key={`${item.nodeId}-${item.problemId}`} onClick={() => onSelectProblem(item.nodeId, item.problemId)}>
+              <span>{item.category}</span>
+              <strong>{item.prompt || item.problemId}</strong>
+              <em>오답 {item.count}회</em>
+            </button>
+          ))}
+        </div>
+        </>
+      ) : (
+        <p>복습할 오답이 없습니다. 틀린 문제는 자동으로 여기에 모입니다.</p>
+      )}
+    </div>
   );
 }
 
@@ -1545,7 +1551,7 @@ function getCurrentMonthPeriod(date = new Date()) {
   return { startTime: start.getTime(), endTime: end.getTime(), label };
 }
 
-function Topbar({ user, profile, rank = 0, onRankClick, onLogout }) {
+function Topbar({ user, profile, rank = 0, wrongCount = 0, onWrongNotebookClick, onRankClick, onLogout }) {
   return (
     <header className="topbar">
       <div className="brand-block">
@@ -1559,6 +1565,12 @@ function Topbar({ user, profile, rank = 0, onRankClick, onLogout }) {
       </div>
 
       <div className="topbar-actions">
+        {(profile.role || "student") === "student" && (
+          <button type="button" className="stat-pill wrong-pill" onClick={onWrongNotebookClick} aria-label="오답노트 열기">
+            <ClipboardList size={16} />
+            <span>{wrongCount}</span>
+          </button>
+        )}
         {(profile.role || "student") === "student" && (
           <button type="button" className="stat-pill rank-pill" onClick={onRankClick} aria-label="랭킹 열기">
             <Crown size={16} />
@@ -1583,16 +1595,16 @@ function Topbar({ user, profile, rank = 0, onRankClick, onLogout }) {
   );
 }
 
-function RankingModal({ children, onClose }) {
+function AppModal({ children, title, icon: Icon = Crown, onClose }) {
   return (
-    <div className="ranking-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="ranking-modal-title" onClick={onClose}>
+    <div className="ranking-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="app-modal-title" onClick={onClose}>
       <div className="ranking-modal" onClick={(event) => event.stopPropagation()}>
         <div className="ranking-modal-head">
           <div className="section-title">
-            <Crown size={18} />
-            <h2 id="ranking-modal-title">랭킹</h2>
+            <Icon size={18} />
+            <h2 id="app-modal-title">{title}</h2>
           </div>
-          <button type="button" className="modal-close-button" onClick={onClose} aria-label="랭킹 닫기">
+          <button type="button" className="modal-close-button" onClick={onClose} aria-label={`${title} 닫기`}>
             <X size={18} />
           </button>
         </div>

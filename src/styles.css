@@ -1151,6 +1151,44 @@ button.stat-pill:hover {
   display: none;
 }
 
+.modal-wrong-note {
+  height: 100%;
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+  align-content: start;
+}
+
+.modal-wrong-note .wrong-note-head {
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #f8fafc;
+}
+
+.modal-wrong-note .wrong-note-list {
+  gap: 8px;
+}
+
+.modal-wrong-note .wrong-note-list button {
+  grid-template-columns: minmax(90px, 0.28fr) minmax(0, 1fr) auto;
+  padding: 10px 12px;
+  background: #ffffff;
+}
+
+.modal-wrong-note > p {
+  padding: 18px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #f8fafc;
+}
+
+.wrong-pill span {
+  min-width: 1.15em;
+  text-align: center;
+}
+
 .modal-close-button {
   width: 34px;
   height: 34px;
@@ -3442,24 +3480,51 @@ li:nth-child(3) .rank-num { color: #b45309; }
   width: 12px;
   min-width: 12px;
   padding: 0;
-  border-radius: 5px;
-  background: rgba(250, 204, 21, 0.2);
+  border-radius: 8px;
+  background: transparent;
   cursor: col-resize;
   touch-action: none;
+  position: relative;
 }
 
 .resize-handle span {
   display: block;
-  width: 4px;
-  height: 100%;
+  width: 2px;
+  height: calc(100% - 16px);
   margin: 0 auto;
-  border-radius: 5px;
-  background: rgba(202, 138, 4, 0.35);
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(148, 163, 184, 0.18), rgba(148, 163, 184, 0.42), rgba(148, 163, 184, 0.18));
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.55);
+}
+
+.resize-handle::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 6px;
+  height: 36px;
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
+  background:
+    radial-gradient(circle, rgba(96, 165, 250, 0.48) 0 1px, transparent 2px) center 8px / 7px 8px repeat-y;
+  opacity: 0;
+  transition: opacity 0.16s ease;
 }
 
 .resize-handle:hover,
 .resizing-workspace .resize-handle {
-  background: rgba(250, 204, 21, 0.34);
+  background: rgba(37, 99, 235, 0.06);
+}
+
+.resize-handle:hover span,
+.resizing-workspace .resize-handle span {
+  background: linear-gradient(180deg, rgba(37, 99, 235, 0.18), rgba(37, 99, 235, 0.62), rgba(37, 99, 235, 0.18));
+}
+
+.resize-handle:hover::after,
+.resizing-workspace .resize-handle::after {
+  opacity: 1;
 }
 
 .resizing-workspace {
@@ -5782,5 +5847,688 @@ li:nth-child(3) .rank-num { color: #b45309; }
   .problem-save-button {
     width: 100%;
     height: 31px;
+  }
+}
+
+/* ── App polish layer ─────────────────────────────────────────────────── */
+:root {
+  --surface: rgba(255, 255, 255, 0.94);
+  --surface-strong: #ffffff;
+  --surface-soft: #f8fafc;
+  --surface-muted: #eef3f8;
+  --line: #d8e1ec;
+  --line-soft: #e8eef5;
+  --ink: #101827;
+  --ink-muted: #607089;
+  --brand: #10b981;
+  --brand-strong: #0f766e;
+  --accent: #2563eb;
+  --danger: #dc2626;
+  --shadow-soft: 0 1px 2px rgba(15, 23, 42, 0.04), 0 10px 26px rgba(15, 23, 42, 0.08);
+  --shadow-panel: 0 18px 46px rgba(15, 23, 42, 0.1);
+}
+
+body {
+  background:
+    linear-gradient(180deg, #f7f9fc 0%, #edf2f8 100%);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+button,
+input,
+select,
+textarea {
+  letter-spacing: 0;
+}
+
+button,
+a,
+select,
+input,
+textarea {
+  transition:
+    border-color 0.16s ease,
+    background-color 0.16s ease,
+    color 0.16s ease,
+    box-shadow 0.16s ease,
+    transform 0.12s ease;
+}
+
+input:focus,
+select:focus,
+textarea:focus,
+button:focus-visible,
+a:focus-visible {
+  outline: none;
+  border-color: rgba(37, 99, 235, 0.62) !important;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14) !important;
+}
+
+.app-shell {
+  gap: 12px;
+  padding: 12px;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(16, 185, 129, 0.08), transparent 30%),
+    radial-gradient(circle at 92% 10%, rgba(37, 99, 235, 0.08), transparent 28%),
+    linear-gradient(180deg, #f7f9fc 0%, #edf2f8 100%);
+}
+
+.topbar {
+  min-height: 64px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(18, 27, 44, 0.98), rgba(12, 20, 34, 0.98));
+  box-shadow: var(--shadow-panel);
+}
+
+.brand-mark {
+  border-radius: 8px;
+  background: linear-gradient(135deg, #20d09b, #10b981);
+  color: #052e24;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 10px 22px rgba(16, 185, 129, 0.22);
+}
+
+.brand-block strong {
+  color: #ffffff;
+  font-weight: 950;
+  letter-spacing: 0;
+}
+
+.brand-block span {
+  color: #b9c4d3;
+  font-weight: 650;
+}
+
+.user-pill,
+.stat-pill,
+.icon-button {
+  border-color: rgba(255, 255, 255, 0.13);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+button.stat-pill:hover,
+.icon-button:hover {
+  background: rgba(255, 255, 255, 0.14);
+  transform: translateY(-1px);
+}
+
+.skill-panel,
+.leader-panel,
+.notebook-panel,
+.guide-panel,
+.source-band,
+.admin-panel,
+.admin-sidebar,
+.admin-dashboard,
+.parent-layout > .parent-insight,
+.parent-layout > .activity-panel,
+.admin-layout > .activity-panel,
+.admin-chart-card,
+.admin-records-panel,
+.member-table-wrap,
+.activity-table-wrap,
+.problem-quality-panel,
+.exam-center,
+.student-summary-card,
+.parent-report-modal,
+.ranking-modal,
+.login-guide-modal {
+  border-color: var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.skill-panel,
+.leader-panel,
+.notebook-panel,
+.guide-panel,
+.source-band,
+.admin-panel,
+.admin-dashboard,
+.parent-layout > .parent-insight,
+.parent-layout > .activity-panel {
+  backdrop-filter: blur(12px);
+}
+
+.section-title {
+  margin-bottom: 10px;
+  padding-bottom: 9px;
+  border-bottom-color: var(--line-soft);
+}
+
+.section-title h2 {
+  color: var(--ink);
+  font-size: 1rem;
+  font-weight: 950;
+}
+
+.section-title svg,
+.admin-sidebar button svg,
+.admin-dashboard-head svg {
+  color: #334155;
+}
+
+.section-action-button,
+.admin-dashboard-actions select,
+.admin-dashboard-actions button,
+.admin-dashboard-actions a,
+.admin-search-box input,
+.problem-header-actions select,
+.mobile-skill-toggle,
+.mobile-solve-toggle,
+.tool-row button,
+.save-row button,
+.guide-actions button,
+.member-table input,
+.member-table select,
+.problem-cell-input,
+.modal-close-button {
+  border-color: #cfd9e6;
+  border-radius: 7px;
+  background: #ffffff;
+  color: var(--ink);
+}
+
+.section-action-button:hover,
+.admin-dashboard-actions button:hover,
+.admin-dashboard-actions a:not(.disabled):hover,
+.tool-row button:hover,
+.save-row button:hover,
+.guide-actions button:hover,
+.modal-close-button:hover {
+  border-color: #b8c6d8;
+  background: #f8fafc;
+}
+
+.admin-sidebar {
+  padding: 8px;
+}
+
+.admin-sidebar button {
+  min-height: 42px;
+  border-radius: 7px;
+  background: transparent;
+  color: #475569;
+  font-weight: 900;
+}
+
+.admin-sidebar button:hover {
+  background: #f1f5f9;
+  color: var(--ink);
+}
+
+.admin-sidebar button.active {
+  background: #111827;
+  color: #ffffff;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.16);
+}
+
+.admin-sidebar button.active svg {
+  color: #ffffff;
+}
+
+.admin-stat-card,
+.child-stat,
+.metric,
+.parent-report-preview-grid div,
+.problem-quality-panel,
+.exam-grade-card,
+.today-goal-card,
+.wrong-row,
+.member-table tr,
+.problem-admin-table tr {
+  border-color: var(--line-soft);
+  border-radius: 8px;
+  background: linear-gradient(180deg, #ffffff, #f8fafc);
+}
+
+.admin-stat-card strong,
+.child-position strong,
+.child-stat span,
+.metric strong {
+  color: var(--ink);
+}
+
+.admin-stat-card span,
+.child-stat label,
+.metric span,
+.metric small {
+  color: var(--ink-muted);
+}
+
+.activity-table th,
+.member-table th,
+.problem-admin-table th {
+  background: #f7f9fc;
+  color: #52627a;
+}
+
+.activity-table td,
+.member-table td,
+.problem-admin-table td {
+  border-bottom-color: var(--line-soft);
+}
+
+.skill-board {
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(8, 13, 26, 0.98));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.skill-stage-header,
+.skill-node,
+.problem-card,
+.answer-section,
+.canvas-shell,
+.guide-output,
+.answer-box,
+.source-card,
+.login-guide-step,
+.parent-report-preview-card,
+.leader-list li,
+.my-stats-card {
+  border-radius: 8px;
+}
+
+.skill-node {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 3px 8px rgba(0, 0, 0, 0.22);
+}
+
+.problem-header {
+  padding: 12px 14px;
+  border-bottom-color: var(--line-soft);
+}
+
+.problem-header h2 {
+  color: var(--ink);
+  font-weight: 950;
+}
+
+.problem-header span,
+.skill-progress-meta span {
+  color: var(--ink-muted);
+  font-weight: 850;
+}
+
+.skill-progress-track {
+  background: #e6edf5;
+}
+
+.skill-progress-fill {
+  background: linear-gradient(90deg, var(--brand), #14b8a6);
+}
+
+.workspace {
+  isolation: isolate;
+  z-index: 2;
+  background: transparent;
+}
+
+.student-study-summary,
+.exam-center,
+.dashboard-strip {
+  position: relative;
+  z-index: 0;
+}
+
+.daily-goal-card,
+.wrong-note-card,
+.exam-center {
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.notebook-panel,
+.guide-panel {
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 22px rgba(15, 23, 42, 0.07);
+}
+
+.problem-card {
+  border-color: var(--line);
+  background:
+    linear-gradient(180deg, #101a2d, #0b1324);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.1);
+}
+
+.problem-card p {
+  color: #f8fafc;
+}
+
+.concept-inline {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.tool-row button.active,
+.save-row button.primary,
+.guide-actions button:not(:disabled):hover,
+.concept-inline-toggle.active,
+.login-guide-start,
+.onboarding-submit {
+  border-color: var(--brand-strong);
+  background: linear-gradient(135deg, #10b981, #0f766e);
+  color: #ffffff;
+}
+
+.save-row button.primary:hover,
+.login-guide-start:hover,
+.onboarding-submit:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 22px rgba(15, 118, 110, 0.22);
+}
+
+.guide-actions button {
+  min-height: 38px;
+  background: #f8fafc;
+}
+
+.guide-output {
+  border-color: var(--line-soft);
+  background: #ffffff;
+}
+
+.leader-list li {
+  border-color: var(--line-soft);
+}
+
+.login-screen,
+.loading-screen,
+.error-screen {
+  background:
+    radial-gradient(circle at 18% 10%, rgba(16, 185, 129, 0.16), transparent 28%),
+    radial-gradient(circle at 82% 8%, rgba(37, 99, 235, 0.14), transparent 28%),
+    #0c1424;
+}
+
+.login-art {
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+  background-size: 44px 44px;
+}
+
+.login-panel,
+.onboarding-panel {
+  border-radius: 8px;
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(13, 21, 36, 0.84);
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.34);
+}
+
+.google-button,
+.role-grid button,
+.grade-picker select,
+.back-button {
+  border-radius: 8px;
+}
+
+@media (max-width: 720px) {
+  .app-shell {
+    padding: 8px;
+    gap: 8px;
+  }
+
+  .topbar {
+    border-radius: 8px;
+  }
+
+  .skill-panel,
+  .leader-panel,
+  .notebook-panel,
+  .guide-panel,
+  .source-band,
+  .admin-panel,
+  .admin-dashboard,
+  .parent-layout > .parent-insight,
+  .parent-layout > .activity-panel {
+    border-radius: 8px;
+  }
+}
+
+@media (min-width: 721px) {
+  .app-shell:not(.admin-shell):not(.parent-shell) {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .app-shell:not(.admin-shell):not(.parent-shell) .topbar,
+  .app-shell:not(.admin-shell):not(.parent-shell) .student-study-summary,
+  .app-shell:not(.admin-shell):not(.parent-shell) .exam-center {
+    flex: 0 0 auto;
+  }
+
+  .app-shell:not(.admin-shell):not(.parent-shell) .dashboard-strip {
+    flex: 0 0 auto;
+    min-height: 0;
+  }
+
+  .app-shell:not(.admin-shell):not(.parent-shell) .workspace {
+    flex: 1 0 min(46vh, 520px);
+    min-height: 0;
+  }
+
+  .app-shell:not(.admin-shell):not(.parent-shell) .source-band {
+    display: none !important;
+  }
+}
+
+/* Final override: resize divider must stay neutral, never yellow. */
+.resize-handle,
+.resize-handle:hover,
+.resizing-workspace .resize-handle {
+  background: rgba(255, 255, 255, 0.72) !important;
+  box-shadow: inset 1px 0 0 rgba(226, 232, 240, 0.9), inset -1px 0 0 rgba(226, 232, 240, 0.9) !important;
+}
+
+.resize-handle span,
+.resize-handle:hover span,
+.resizing-workspace .resize-handle span {
+  width: 3px !important;
+  background: #cbd5e1 !important;
+  box-shadow: none !important;
+}
+
+.resize-handle::after,
+.resize-handle:hover::after,
+.resizing-workspace .resize-handle::after {
+  background: #94a3b8 !important;
+  opacity: 0.18 !important;
+}
+
+/* Clean acquired skills only: remove neon glow from completed nodes. */
+.skill-node.completed {
+  box-shadow: none !important;
+  filter: none !important;
+  text-shadow: none !important;
+  animation: none !important;
+  border-width: 1px;
+  border-color: #0f766e !important;
+  background: #0f766e !important;
+  color: #ffffff !important;
+}
+
+.skill-node.completed .skill-icon {
+  filter: none !important;
+}
+
+.skill-node.completed:hover {
+  box-shadow: none !important;
+}
+
+.skill-node.completed.selected {
+  border-color: #0f766e !important;
+  background: #0f766e !important;
+  animation: none !important;
+}
+
+.skill-node.completed.selected .skill-icon,
+.skill-node.completed.selected small,
+.skill-node.completed.selected em {
+  text-shadow: none !important;
+  filter: none !important;
+}
+
+/* Game-like skill cards without heavy neon. */
+.skill-node {
+  overflow: hidden;
+  border-radius: 8px;
+  padding: 3px 7px 3px 4px;
+  border-width: 1px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 2px 5px rgba(2, 6, 23, 0.22);
+}
+
+.skill-node::before {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.045);
+  pointer-events: none;
+}
+
+.skill-node::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: currentColor;
+  opacity: 0.65;
+}
+
+.skill-icon {
+  width: 1.45rem;
+  height: 1.45rem;
+  max-width: 1.45rem;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.74rem;
+  filter: none;
+}
+
+.skill-node strong {
+  font-weight: 850;
+}
+
+.skill-node.pending {
+  background: linear-gradient(180deg, #1b2435, #101827) !important;
+  border-color: rgba(245, 158, 11, 0.72) !important;
+  color: #fbbf24 !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 3px 8px rgba(2, 6, 23, 0.28);
+}
+
+.skill-node.pending .skill-icon {
+  background: rgba(245, 158, 11, 0.13);
+  border-color: rgba(245, 158, 11, 0.24);
+}
+
+.skill-node.completed {
+  background: linear-gradient(180deg, #0f766e, #0b5f59) !important;
+  border-color: #15a38f !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16) !important;
+}
+
+.skill-node.completed .skill-icon {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.skill-node.completed em.done {
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.skill-node.selected:not(.completed) {
+  background: linear-gradient(180deg, #26344b, #182235) !important;
+  border-color: #38bdf8 !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 3px 8px rgba(2, 6, 23, 0.28) !important;
+}
+
+.skill-node:hover {
+  transform: translateY(-1px);
+}
+
+/* Desktop/tablet skill trees must never clip long grade columns such as G3. */
+@media (min-width: 721px) {
+  .app-shell:not(.admin-shell):not(.parent-shell) .skill-panel {
+    overflow: visible;
+    contain: layout;
+  }
+
+  .app-shell:not(.admin-shell):not(.parent-shell) .skill-board {
+    --skill-node-height: 20px;
+    --skill-link-height: 3px;
+    --skill-node-font-size: 0.57rem;
+    --skill-icon-font-size: 0.58rem;
+    flex: 0 0 auto;
+    height: auto;
+    min-height: 0;
+    gap: 5px;
+    padding: 6px;
+    overflow: visible;
+  }
+
+  .app-shell:not(.admin-shell):not(.parent-shell) .skill-stage,
+  .app-shell:not(.admin-shell):not(.parent-shell) .skill-stage-list {
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .app-shell:not(.admin-shell):not(.parent-shell) .skill-stage {
+    gap: 3px;
+  }
+
+  .app-shell:not(.admin-shell):not(.parent-shell) .skill-stage-header {
+    height: 18px;
+    font-size: 0.58rem;
+  }
+
+  .app-shell:not(.admin-shell):not(.parent-shell) .skill-node {
+    height: var(--skill-node-height);
+    min-height: var(--skill-node-height);
+    gap: 3px;
+    padding: 1px 5px 1px 3px;
+  }
+
+  .app-shell:not(.admin-shell):not(.parent-shell) .skill-icon {
+    width: 1rem;
+    height: 1rem;
+    max-width: 1rem;
+    border-radius: 4px;
+    font-size: var(--skill-icon-font-size);
+  }
+
+  .app-shell:not(.admin-shell):not(.parent-shell) .skill-node strong {
+    font-size: var(--skill-node-font-size) !important;
+    line-height: 1.05;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .app-shell:not(.admin-shell):not(.parent-shell) .skill-node small,
+  .app-shell:not(.admin-shell):not(.parent-shell) .skill-node em {
+    font-size: 0.43rem !important;
+  }
+
+  .app-shell:not(.admin-shell):not(.parent-shell) .skill-link {
+    height: var(--skill-link-height);
   }
 }
