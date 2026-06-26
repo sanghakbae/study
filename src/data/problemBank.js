@@ -1,4 +1,37 @@
 import { curriculumNodes } from "./curriculum.js";
+import { problemsBySkill } from "./curatedProblems.js";
+
+// ── 교과서 기반 정적 문제(권장) ────────────────────────────────────────────────
+// curatedProblems.js 에 해당 스킬의 문제가 있으면 그것을 쓰고, 없으면 아래의
+// 절차적 생성기로 폴백한다. (워크플로로 42개 스킬을 모두 채우면 폴백은 쓰이지 않는다.)
+const FALLBACK_COUNT = 50;
+
+// 스킬별 실제 문제 개수 — 스킬 완료 판정 임계값으로도 쓰인다.
+export function getProblemCountForSkill(skillId) {
+  const curated = problemsBySkill[skillId];
+  return curated && curated.length ? curated.length : FALLBACK_COUNT;
+}
+
+function buildCuratedProblem(skill, raw, n) {
+  const hintText = raw.hint || raw.concept || "";
+  const conceptText = raw.concept || skill.title;
+  return {
+    id: `p-${skill.id}-${String(n).padStart(2, "0")}`,
+    nodeId: skill.id,
+    gradeBand: skill.stage.startsWith("중") ? "middle" : "high",
+    source: "curated",
+    sourceName: "교과서 기반 단원 문제",
+    difficulty: Math.min(5, Math.max(1, Number(raw.difficulty) || 1)),
+    title: raw.title || `${skill.title} ${n}`,
+    prompt: raw.prompt || "",
+    answer: String(raw.answer ?? ""),
+    ...(Array.isArray(raw.choices) && raw.choices.length ? { choices: raw.choices } : {}),
+    concept: conceptText,
+    hint: `## 힌트\n- ${hintText}`,
+    nextStep: `## 다음 한 단계\n- ${hintText}`,
+    conceptGuide: `## 개념 학습\n- ${conceptText}`,
+  };
+}
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 const P = (n, r) => { let v = 1; for (let i = 0; i < r; i++) v *= (n - i); return v; };
@@ -18,7 +51,11 @@ const T = (n, types) => (n - 1) % types;
 
 export function getProblemsForSkill(skill) { return skill ? generateProblemsForSkill(skill) : []; }
 export function generateProblemsForSkill(skill) {
-  return Array.from({ length: 50 }, (_, i) => buildProblem(skill, i + 1));
+  const curated = problemsBySkill[skill.id];
+  if (curated && curated.length) {
+    return curated.map((raw, i) => buildCuratedProblem(skill, raw, i + 1));
+  }
+  return Array.from({ length: FALLBACK_COUNT }, (_, i) => buildProblem(skill, i + 1));
 }
 
 function buildProblem(skill, n) {

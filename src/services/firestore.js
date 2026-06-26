@@ -7,6 +7,7 @@ import {
   limit,
   orderBy,
   query,
+  runTransaction,
   serverTimestamp,
   setDoc,
   updateDoc,
@@ -58,15 +59,15 @@ export async function ensureUserProfile(user) {
 export async function seedCatalogIfNeeded() {
   const markerRef = doc(db, "system", "catalog");
   const marker = await getDoc(markerRef);
-  if (marker.exists() && marker.data()?.version >= 6) return;
+  if (marker.exists() && marker.data()?.version >= 7) return;
 
   await Promise.all([
     ...curriculumNodes.map((node) => setDoc(doc(db, "skills", node.id), node)),
     ...generatedProblems.map((problem) => setDoc(doc(db, "problems", problem.id), problem)),
     setDoc(markerRef, {
       seededAt: serverTimestamp(),
-      version: 6,
-      note: "Expanded catalog with generated problems and static guidance.",
+      version: 7,
+      note: "교과서 기반 단원 문제(스킬당 30문제)로 교체.",
     }),
   ]);
 }
@@ -77,7 +78,7 @@ export async function loadSkills() {
 }
 
 export async function loadProblemsBySkill(nodeId) {
-  const q = query(collection(db, "problems"), where("nodeId", "==", nodeId), limit(50));
+  const q = query(collection(db, "problems"), where("nodeId", "==", nodeId), limit(100));
   const snap = await getDocs(q);
   return snap.docs.map((item) => item.data());
 }
@@ -251,9 +252,10 @@ export async function loadAttemptsForUsers(userIds) {
 
 export async function loadAiUsageLogsForUsers(userIds) {
   if (!userIds.length) return [];
+  const uniqueUserIds = Array.from(new Set(userIds.filter(Boolean)));
   const chunks = [];
-  for (let index = 0; index < userIds.length; index += 10) {
-    chunks.push(userIds.slice(index, index + 10));
+  for (let index = 0; index < uniqueUserIds.length; index += 10) {
+    chunks.push(uniqueUserIds.slice(index, index + 10));
   }
   const results = [];
   for (const chunk of chunks) {
@@ -266,9 +268,10 @@ export async function loadAiUsageLogsForUsers(userIds) {
 
 export async function loadAuditLogsForUsers(userIds) {
   if (!userIds.length) return [];
+  const uniqueUserIds = Array.from(new Set(userIds.filter(Boolean)));
   const chunks = [];
-  for (let index = 0; index < userIds.length; index += 10) {
-    chunks.push(userIds.slice(index, index + 10));
+  for (let index = 0; index < uniqueUserIds.length; index += 10) {
+    chunks.push(uniqueUserIds.slice(index, index + 10));
   }
   const results = [];
   for (const chunk of chunks) {
@@ -291,6 +294,7 @@ export async function saveAuditLog({ user, action, category = "system", message 
     category,
     message,
     metadata,
+    createdAtMs: Date.now(),
     createdAt: serverTimestamp(),
   });
 }
@@ -394,4 +398,45 @@ export async function saveAttempt({ user, problem, strokes, guide, isCorrect, st
     { merge: true },
   );
   return { xpGain };
+}
+
+// 보너스 XP 지급(스킬 완주 등).
+export async function awardBonusXp({ user, amount }) {
+  if (!user || !amount) return;
+  await updateDoc(doc(db, "users", user.uid), {
+    xp: increment(amount),
+    lastActivityAt: serverTimestamp(),
+  });
+}
+
+// 시험 결과 저장 + (신규 합격 시) 보너스 XP 지급. examResults 맵은 user 문서에 저장한다.
+export async function saveExamResult({ user, key, score, total, passed, bonusXp = 0 }) {
+  if (!user || !key) return;
+  const ref = doc(db, "users", user.uid);
+  const result = await runTransaction(db, async (transaction) => {
+    const snap = await transaction.get(ref);
+    const current = snap.data()?.examResults?.[key];
+    const awardedBonus = Boolean(bonusXp && passed && !current?.passed);
+    const nextPassed = Boolean(current?.passed || passed);
+    transaction.update(ref, {
+      [`examResults.${key}`]: {
+        score: Math.max(Number(current?.score || 0), score),
+        total,
+        passed: nextPassed,
+        at: Date.now(),
+        lastScore: score,
+      },
+      ...(awardedBonus ? { xp: increment(bonusXp) } : {}),
+      lastActivityAt: serverTimestamp(),
+    });
+    return { awardedBonus };
+  });
+  saveAuditLog({
+    user,
+    action: "exam_submitted",
+    category: "exam",
+    message: passed ? "시험 합격" : "시험 응시",
+    metadata: { key, score, total, passed, bonusXp: result.awardedBonus ? bonusXp : 0 },
+  }).catch((error) => console.error("Audit exam log failed:", error));
+  return result;
 }

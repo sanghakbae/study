@@ -9,6 +9,9 @@ import {
   Eraser,
   Flame,
   Gamepad2,
+  GraduationCap,
+  ClipboardList,
+  X,
   Hand,
   HelpCircle,
   Loader2,
@@ -52,6 +55,8 @@ import {
   saveAiUsageLog,
   saveAuditLog,
   saveAttempt,
+  awardBonusXp,
+  saveExamResult,
   seedCatalogIfNeeded,
   suppressLoginGuideForSevenDays,
   updateUserRole,
@@ -59,8 +64,17 @@ import {
   upsertProblem,
 } from "./services/firestore";
 import { curriculumNodes } from "./data/curriculum";
-import { generatedProblems, getProblemsForSkill } from "./data/problemBank";
+import { generatedProblems, getProblemsForSkill, getProblemCountForSkill } from "./data/problemBank";
 import { externalProblemSources } from "./services/problemSources";
+import {
+  GRADES,
+  EXAM_PASS_RATIO,
+  EXAM_PASS_BONUS,
+  examSkillSplit,
+  getExamPaper,
+  examStatusesForGrade,
+  allExamStatuses,
+} from "./data/exams";
 
 const fallbackUser = {
   displayName: "게스트",
@@ -84,6 +98,15 @@ const gradeOptions = ["중1", "중2", "중3", "고1", "고2", "고3"];
 const problemLookup = new Map(generatedProblems.map((problem) => [problem.id, problem]));
 const defaultSkillId = "m1-numbers";
 const defaultProblemId = "p-m1-numbers-01";
+
+// 정답 비교용 정규화: 공백·괄호 제거, 유니코드 마이너스 통일, 소문자화.
+export function normalizeMathAnswer(value) {
+  return String(value ?? "")
+    .replace(/\s+/g, "")
+    .replace(/[()]/g, "")
+    .replace(/−/g, "-")
+    .toLowerCase();
+}
 
 function getProblemOrder(problem) {
   const match = String(problem.id || "").match(/-(\d+)$/);
@@ -146,7 +169,8 @@ function DeployRefreshOverlay() {
 }
 
 export default function App() {
-  const isManagerPath = window.location.pathname === "/manager";
+  const normalizedPath = window.location.pathname.replace(/\/+$/, "") || "/";
+  const isManagerPath = normalizedPath === "/manager" || normalizedPath === "/admin";
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(fallbackUser);
   const [authReady, setAuthReady] = useState(false);
@@ -170,12 +194,17 @@ export default function App() {
   const [hintUsed, setHintUsed] = useState({});
   const [reviewCounts, setReviewCounts] = useState({});
   const [solvedBySkill, setSolvedBySkill] = useState({});
+  const [acquiredSkill, setAcquiredSkill] = useState(null); // { skill, bonus } — 스킬 획득 축하 모달
+  const [activeExam, setActiveExam] = useState(null); // 응시 중인 시험 { grade, type, key, title, paper }
+  const [examResultModal, setExamResultModal] = useState(null); // 시험 결과 모달
   const [dataWarning, setDataWarning] = useState("");
   const [noteRatio, setNoteRatio] = useState(68);
   const [mobileSkillOpen, setMobileSkillOpen] = useState(true);
   const [showLoginGuide, setShowLoginGuide] = useState(false);
   const [guideSuppressChecked, setGuideSuppressChecked] = useState(false);
   const [deployRefreshing, setDeployRefreshing] = useState(false);
+  const [rankingModalOpen, setRankingModalOpen] = useState(false);
+  const [examUnlockNotice, setExamUnlockNotice] = useState(null);
   const notebookRef = useRef(null);
   const workspaceRef = useRef(null);
   // 스킬별 푼 문제 집합을 ref로도 들고 있어, 문제 로드 effect가 매 풀이마다 재실행되지 않으면서 최신 진행도를 참조한다.
@@ -183,6 +212,8 @@ export default function App() {
   const deployVersionRef = useRef("");
   const auditLoginRef = useRef("");
   const parentViewAuditRef = useRef("");
+  const examSubmitLockRef = useRef(false);
+  const examAvailabilityRef = useRef(null);
 
   const selectedSkill = useMemo(
     () => skills.find((item) => item.id === selectedSkillId) || skills[0],
@@ -314,7 +345,9 @@ export default function App() {
     const skill = skills.find((s) => s.id === selectedSkillId) || curriculumNodes.find((s) => s.id === selectedSkillId);
     loadProblemsBySkill(selectedSkillId)
       .then((items) => {
-        const nextProblems = sortProblemsByNumber(items.length >= 50 ? items : getFallbackProblems(skill));
+        const expectedCount = getProblemCountForSkill(selectedSkillId);
+        const sourceProblems = items.length >= expectedCount ? items : getFallbackProblems(skill);
+        const nextProblems = sortProblemsByNumber(sourceProblems).slice(0, expectedCount);
         const savedLocation = { skillId: profile.lastSkillId, problemId: profile.lastProblemId };
         const solvedIds = solvedBySkillRef.current[selectedSkillId] || [];
         const nextProblemId = chooseProblemId({ problems: nextProblems, savedLocation, skillId: selectedSkillId, solvedIds });
@@ -403,15 +436,19 @@ export default function App() {
       nextProfile.role === "admin"
         ? loadedUsers.map((item) => item.uid)
         : Array.from(new Set([user.uid, ...(nextProfile.parentOf || [])].filter(Boolean)));
-    const [attempts, progressDocs, usageLogs, auditLogRows] = await Promise.all([
+    const [attempts, progressDocs, usageLogs] = await Promise.all([
       loadAttemptsForUsers(targetUserIds),
       loadProgressForUsers(targetUserIds),
       loadAiUsageLogsForUsers(targetUserIds),
-      loadAuditLogsForUsers(auditTargetUserIds),
     ]);
     setActivityAttempts(mergeAttemptsWithProgress(attempts, progressDocs));
     setAiUsageLogs(usageLogs);
-    setAuditLogs(auditLogRows);
+    try {
+      setAuditLogs(await loadAuditLogsForUsers(auditTargetUserIds));
+    } catch (error) {
+      console.error("감사 로그 조회 실패:", error);
+      setAuditLogs([]);
+    }
   }
 
   useEffect(() => {
@@ -598,7 +635,8 @@ export default function App() {
       setSelectedProblemId(nextProblem.id);
       return;
     }
-    setGuide("이 스킬의 50문제를 모두 완료했습니다. 스킬 트리에서 다음 열린 스킬을 선택하세요.");
+    const total = getProblemCountForSkill(selectedSkillId);
+    setGuide(`이 스킬의 ${total}문제를 모두 완료했습니다. 스킬 트리에서 다음 열린 스킬을 선택하세요.`);
   }
 
   async function handleSaveAttempt(completed, problemOverride = selectedProblem) {
@@ -613,9 +651,16 @@ export default function App() {
     // 힌트 받기·풀이 방향만 XP 5%씩 차감한다. 개념 학습은 기본 제공이라 차감하지 않는다.
     const xpMultiplier = Math.max(0.3, 1 - hints * 0.05);
 
+    let completedSkillReward = null;
     if (completed) {
-      markProblemCompleted(problem.id, problem.nodeId);
-      advanceToNextProblem(problem.id);
+      const prevSolved = solvedBySkill[problem.nodeId] || [];
+      const total = getProblemCountForSkill(problem.nodeId);
+      const wasComplete = prevSolved.length >= total;
+      const nowComplete = !prevSolved.includes(problem.id) && prevSolved.length + 1 >= total;
+      if (nowComplete && !wasComplete) {
+        const skill = skills.find((s) => s.id === problem.nodeId) || curriculumNodes.find((s) => s.id === problem.nodeId);
+        completedSkillReward = { skill, bonus: skill?.xp || 0 };
+      }
     }
 
     try {
@@ -631,6 +676,20 @@ export default function App() {
         submittedAnswer,
         helpUsed,
       });
+      if (completed) {
+        markProblemCompleted(problem.id, problem.nodeId);
+        advanceToNextProblem(problem.id);
+        if (completedSkillReward) {
+          setAcquiredSkill(completedSkillReward);
+          if (completedSkillReward.bonus) {
+            try {
+              await awardBonusXp({ user, amount: completedSkillReward.bonus });
+            } catch (error) {
+              console.error("스킬 완주 보너스 지급 실패:", error);
+            }
+          }
+        }
+      }
       if (!completed) {
         setGuide("풀이가 저장됐습니다. 해결 완료를 눌러야 다음 문제로 넘어갑니다.");
       }
@@ -644,13 +703,7 @@ export default function App() {
     }
   }
 
-  function normalizeAnswer(value) {
-    return String(value ?? "")
-      .replace(/\s+/g, "")
-      .replace(/[()]/g, "")
-      .replace(/−/g, "-")
-      .toLowerCase();
-  }
+  const normalizeAnswer = normalizeMathAnswer;
 
   async function handleAnswerCheck(inputAnswer) {
     if (!user || !selectedProblem) return false;
@@ -688,9 +741,61 @@ export default function App() {
     return false;
   }
 
+  function handleStartExam(grade, type) {
+    const paper = getExamPaper(grade, type);
+    if (!paper || !paper.problems?.length) return;
+    setActiveExam({
+      grade,
+      type,
+      key: `${grade}-${type}`,
+      title: paper.title || `${grade} ${type === "mid" ? "중간고사" : "기말고사"}`,
+      paper,
+    });
+  }
+
+  async function handleSubmitExam(correctCount) {
+    if (!activeExam || examSubmitLockRef.current) return;
+    examSubmitLockRef.current = true;
+    const { key, type, title, paper } = activeExam;
+    const total = paper.problems.length;
+    const score = total ? Math.round((correctCount / total) * 100) : 0;
+    const passed = total ? correctCount / total >= EXAM_PASS_RATIO : false;
+    const alreadyPassed = !!profile.examResults?.[key]?.passed;
+    const possibleBonus = passed && !alreadyPassed ? EXAM_PASS_BONUS[type] || 0 : 0;
+
+    setActiveExam(null);
+    try {
+      const result = await saveExamResult({ user, key, score, total, passed, bonusXp: possibleBonus });
+      const bonus = result?.awardedBonus ? possibleBonus : 0;
+      setExamResultModal({ key, title, correct: correctCount, total, score, passed, bonus });
+      setProfile((current) => {
+        const previous = current.examResults?.[key];
+        return {
+          ...current,
+          examResults: {
+            ...(current.examResults || {}),
+            [key]: {
+              score: Math.max(Number(previous?.score || 0), score),
+              total,
+              passed: Boolean(previous?.passed || passed),
+              at: Date.now(),
+              lastScore: score,
+            },
+          },
+        };
+      });
+      await refreshMembers();
+    } catch (error) {
+      console.error("시험 결과 저장 실패:", error);
+      setExamResultModal({ key, title, correct: correctCount, total, score, passed, bonus: 0 });
+    } finally {
+      examSubmitLockRef.current = false;
+    }
+  }
+
   const completedSkills = useMemo(() => {
     return skills
-      .filter((skill) => (solvedBySkill[skill.id]?.length || 0) >= 50)
+      .filter((skill) => (solvedBySkill[skill.id]?.length || 0) >= getProblemCountForSkill(skill.id))
       .map((skill) => skill.id);
   }, [skills, solvedBySkill]);
 
@@ -701,6 +806,60 @@ export default function App() {
         .map((skill) => skill.id),
     );
   }, [skills, completedSkills]);
+
+  const isStudentProfile = (profile.role || "student") === "student";
+  const examRows = useMemo(
+    () => (isStudentProfile ? allExamStatuses(completedSkills, profile.examResults || {}) : []),
+    [completedSkills, profile.examResults, isStudentProfile],
+  );
+  const visibleExamRows = examRows.filter(
+    (row) => row.mid.status !== "locked" || row.final.status !== "locked",
+  );
+  const availableExamList = visibleExamRows.flatMap((row) =>
+    [row.mid, row.final].filter((exam) => exam.status === "available"),
+  );
+  const dailyGoalTarget = 5;
+  const todaySolvedCount = useMemo(() => {
+    if (!isStudentProfile) return 0;
+    const todayKey = getLocalDateKey(new Date());
+    return activityAttempts.filter((attempt) =>
+      attempt.uid === user?.uid
+      && attempt.completed
+      && getLocalDateKey(new Date(getAttemptTime(attempt) || 0)) === todayKey
+    ).length;
+  }, [activityAttempts, user?.uid, isStudentProfile]);
+  const wrongNotebookItems = useMemo(
+    () => (isStudentProfile ? buildWrongNotebookItems(activityAttempts.filter((attempt) => attempt.uid === user?.uid), solvedBySkill) : []),
+    [activityAttempts, solvedBySkill, user?.uid, isStudentProfile],
+  );
+  const nextSkillAfterAcquired = acquiredSkill?.skill
+    ? skills.find((skill) =>
+      skill.id !== acquiredSkill.skill.id
+      && unlockedSkills.has(skill.id)
+      && (solvedBySkill[skill.id]?.length || 0) < getProblemCountForSkill(skill.id)
+    )
+    : null;
+
+  useEffect(() => {
+    if (!authReady || !user || profile.role !== "student") return;
+    const keys = availableExamList.map((exam) => exam.key).sort();
+    const previous = examAvailabilityRef.current;
+    if (previous == null) {
+      examAvailabilityRef.current = keys;
+      return;
+    }
+    const openedKey = keys.find((key) => !previous.includes(key));
+    examAvailabilityRef.current = keys;
+    if (!openedKey) return;
+    const openedExam = availableExamList.find((exam) => exam.key === openedKey);
+    if (openedExam) setExamUnlockNotice(openedExam);
+  }, [authReady, user, profile.role, availableExamList]);
+
+  function handleSelectProblem(nodeId, problemId) {
+    if (!nodeId || !problemId) return;
+    setSelectedSkillId(nodeId);
+    setSelectedProblemId(problemId);
+  }
 
   if (!authReady) {
     return (
@@ -795,13 +954,69 @@ export default function App() {
     <main className="app-shell">
       {deployRefreshing && <DeployRefreshOverlay />}
       {dataWarning && <div className="warning-bar">{dataWarning}</div>}
-      <Topbar user={user} profile={profile} rank={topbarRank || 0} onLogout={handleLogout} />
+      <Topbar
+        user={user}
+        profile={profile}
+        rank={topbarRank || 0}
+        onRankClick={() => setRankingModalOpen(true)}
+        onLogout={handleLogout}
+      />
       {showLoginGuide && (
         <LoginGuideModal
           suppressChecked={guideSuppressChecked}
           onSuppressChange={setGuideSuppressChecked}
           onClose={handleDismissLoginGuide}
         />
+      )}
+
+      {acquiredSkill && (
+        <SkillAcquiredModal
+          skill={acquiredSkill.skill}
+          bonus={acquiredSkill.bonus}
+          nextSkill={nextSkillAfterAcquired}
+          availableExam={availableExamList[0]}
+          onClose={() => setAcquiredSkill(null)}
+          onNextSkill={() => {
+            if (!nextSkillAfterAcquired) return;
+            setAcquiredSkill(null);
+            setSelectedSkillId(nextSkillAfterAcquired.id);
+          }}
+          onStartExam={(exam) => {
+            setAcquiredSkill(null);
+            handleStartExam(exam.grade, exam.type);
+          }}
+        />
+      )}
+      {examUnlockNotice && (
+        <ExamUnlockModal
+          exam={examUnlockNotice}
+          onClose={() => setExamUnlockNotice(null)}
+          onStart={() => {
+            const exam = examUnlockNotice;
+            setExamUnlockNotice(null);
+            handleStartExam(exam.grade, exam.type);
+          }}
+        />
+      )}
+      {activeExam && (
+        <ExamModal exam={activeExam} onSubmit={handleSubmitExam} onCancel={() => setActiveExam(null)} />
+      )}
+      {examResultModal && (
+        <ExamResultModal
+          result={examResultModal}
+          onClose={() => setExamResultModal(null)}
+          onRetry={() => {
+            const grade = examResultModal.key.split("-")[0];
+            const type = examResultModal.key.split("-")[1];
+            setExamResultModal(null);
+            handleStartExam(grade, type);
+          }}
+        />
+      )}
+      {rankingModalOpen && (
+        <RankingModal onClose={() => setRankingModalOpen(false)}>
+          <Leaderboard leaders={leaderboard} currentUid={user.uid} profile={profile} />
+        </RankingModal>
       )}
 
       <section className="dashboard-strip">
@@ -815,8 +1030,16 @@ export default function App() {
           mobileCollapsed={!mobileSkillOpen}
           onMobileToggle={() => setMobileSkillOpen((open) => !open)}
         />
-        <Leaderboard className="dashboard-rank" leaders={leaderboard} currentUid={user.uid} profile={profile} />
       </section>
+
+      {visibleExamRows.length > 0 && <ExamCenter rows={visibleExamRows} onStart={handleStartExam} />}
+
+      <StudentStudySummary
+        goalTarget={dailyGoalTarget}
+        solvedToday={todaySolvedCount}
+        wrongItems={wrongNotebookItems}
+        onSelectProblem={handleSelectProblem}
+      />
 
       <section
         className="workspace"
@@ -833,6 +1056,7 @@ export default function App() {
           answerCheck={answerChecks[selectedProblem.id]}
           saving={saving}
           solvedCount={solvedBySkill[selectedSkillId]?.length || 0}
+          totalProblemCount={getProblemCountForSkill(selectedSkillId)}
           solvedIds={solvedBySkill[selectedSkillId] || []}
           hintCount={getGuidePenaltyCount(selectedProblem?.id)}
           onAnswerCheck={handleAnswerCheck}
@@ -868,6 +1092,257 @@ export default function App() {
         </div>
       </section>
     </main>
+  );
+}
+
+// 스킬의 모든 문제를 완료하면 뜨는 축하 모달.
+function StudentStudySummary({ goalTarget, solvedToday, wrongItems, onSelectProblem }) {
+  const goalPct = Math.min(100, Math.round((solvedToday / Math.max(1, goalTarget)) * 100));
+  return (
+    <section className="student-study-summary">
+      <div className="daily-goal-card">
+        <div>
+          <span>오늘의 목표</span>
+          <strong>{Math.min(solvedToday, goalTarget)} / {goalTarget}문제</strong>
+        </div>
+        <div className="daily-goal-track">
+          <i style={{ width: `${goalPct}%` }} />
+        </div>
+      </div>
+      <div className="wrong-note-card">
+        <div className="wrong-note-head">
+          <div>
+            <span>오답노트</span>
+            <strong>{wrongItems.length ? `${wrongItems.length}개 복습 대기` : "복습할 오답 없음"}</strong>
+          </div>
+        </div>
+        {wrongItems.length ? (
+          <div className="wrong-note-list">
+            {wrongItems.slice(0, 3).map((item) => (
+              <button type="button" key={`${item.nodeId}-${item.problemId}`} onClick={() => onSelectProblem(item.nodeId, item.problemId)}>
+                <span>{item.category}</span>
+                <strong>{item.prompt || item.problemId}</strong>
+                <em>오답 {item.count}회</em>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p>틀린 문제는 자동으로 여기에 모입니다.</p>
+        )}
+      </div>
+    </section>
+  );
+}
+
+// 스킬의 모든 문제를 완료하면 뜨는 축하 모달.
+function SkillAcquiredModal({ skill, bonus, nextSkill, availableExam, onClose, onNextSkill, onStartExam }) {
+  if (!skill) return null;
+  return (
+    <div className="skill-acquired-backdrop" role="dialog" aria-modal="true" aria-labelledby="skill-acquired-title" onClick={onClose}>
+      <div className="skill-acquired-modal" onClick={(event) => event.stopPropagation()}>
+        <div className="confetti-layer" aria-hidden="true">
+          {Array.from({ length: 24 }).map((_, i) => (
+            <span key={i} className={`confetti c${i % 6}`} style={{ left: `${(i * 4.1) % 100}%`, animationDelay: `${(i % 8) * 0.12}s` }} />
+          ))}
+        </div>
+        <div className="skill-acquired-badge">
+          <Trophy size={46} />
+        </div>
+        <p className="skill-acquired-eyebrow">SKILL UNLOCKED</p>
+        <h2 id="skill-acquired-title">스킬 획득!</h2>
+        <p className="skill-acquired-name">{skill.title}</p>
+        <p className="skill-acquired-meta">{skill.stage} · {skill.unit}</p>
+        {bonus ? <p className="skill-acquired-xp">+{bonus.toLocaleString()} XP 보너스</p> : null}
+        <div className="skill-acquired-actions">
+          {nextSkill && (
+            <button type="button" className="skill-acquired-btn primary" onClick={onNextSkill}>
+              다음 스킬
+            </button>
+          )}
+          {availableExam && (
+            <button type="button" className="skill-acquired-btn exam" onClick={() => onStartExam(availableExam)}>
+              {availableExam.title} 도전
+            </button>
+          )}
+          <button type="button" className="skill-acquired-btn" onClick={onClose}>닫기</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ExamUnlockModal({ exam, onClose, onStart }) {
+  return (
+    <div className="exam-result-backdrop" role="dialog" aria-modal="true" onClick={onClose}>
+      <div className="exam-result-modal passed" onClick={(event) => event.stopPropagation()}>
+        <div className="exam-result-icon"><GraduationCap size={42} /></div>
+        <p className="exam-result-eyebrow">시험 해금</p>
+        <h2>{exam.title} 열림</h2>
+        <p className="exam-result-note">스킬 조건을 채워서 응시할 수 있습니다.</p>
+        <div className="exam-result-actions">
+          <button type="button" className="exam-result-retry" onClick={onStart}>바로 응시</button>
+          <button type="button" className="exam-result-close" onClick={onClose}>나중에</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// 학년별 중간/기말 시험 현황 + 응시 버튼.
+function ExamCenter({ rows, onStart }) {
+  const hasAnyPaper = rows.some((row) => row.mid.hasPaper || row.final.hasPaper);
+  if (!hasAnyPaper) return null;
+  const cell = (exam) => {
+    const label = exam.type === "mid" ? "중간고사" : "기말고사";
+    if (exam.status === "passed") {
+      return (
+        <div className={`exam-chip passed`} key={exam.key}>
+          <ClipboardList size={15} />
+          <span>{label}</span>
+          <em>합격 {exam.score != null ? `· ${exam.score}점` : ""}</em>
+        </div>
+      );
+    }
+    if (exam.status === "available") {
+      return (
+        <button type="button" className="exam-chip available" key={exam.key} onClick={() => onStart(exam.grade, exam.type)}>
+          <ClipboardList size={15} />
+          <span>{label}</span>
+          <em>응시하기</em>
+        </button>
+      );
+    }
+    return (
+      <div className="exam-chip locked" key={exam.key}>
+        <Lock size={14} />
+        <span>{label}</span>
+        <em>{exam.type === "mid" ? "스킬 절반 필요" : "스킬 전부 필요"}</em>
+      </div>
+    );
+  };
+  return (
+    <section className="exam-center">
+      <div className="section-title">
+        <GraduationCap size={18} />
+        <h2>시험 센터</h2>
+        <span className="exam-center-hint">스킬 절반 → 중간고사, 전부 → 기말고사 · 60점 이상 합격</span>
+      </div>
+      <div className="exam-grade-grid">
+        {rows.map((row) => (
+          <article className={`exam-grade-card ${row.mid.status === "passed" && row.final.status === "passed" ? "done" : ""}`} key={row.grade}>
+            <h3>{row.grade}</h3>
+            <div className="exam-grade-chips">
+              {cell(row.mid)}
+              {cell(row.final)}
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+// 시험 응시 모달: 문제를 한 문항씩 풀고 마지막에 채점한다.
+function ExamModal({ exam, onSubmit, onCancel }) {
+  const problems = exam.paper.problems || [];
+  const total = problems.length;
+  const [index, setIndex] = useState(0);
+  const [answers, setAnswers] = useState({});
+  const [submitting, setSubmitting] = useState(false);
+  const problem = problems[index];
+  const answered = Object.keys(answers).filter((k) => String(answers[k] ?? "").trim() !== "").length;
+
+  function setAnswer(value) {
+    setAnswers((current) => ({ ...current, [index]: value }));
+  }
+
+  async function grade() {
+    if (submitting) return;
+    setSubmitting(true);
+    let correct = 0;
+    problems.forEach((p, i) => {
+      if (normalizeMathAnswer(answers[i]) && normalizeMathAnswer(answers[i]) === normalizeMathAnswer(p.answer)) correct += 1;
+    });
+    try {
+      await onSubmit(correct);
+    } catch (error) {
+      console.error("시험 제출 실패:", error);
+      setSubmitting(false);
+    }
+  }
+
+  const isLast = index === total - 1;
+  return (
+    <div className="exam-backdrop" role="dialog" aria-modal="true">
+      <div className="exam-modal">
+        <header className="exam-modal-head">
+          <div>
+            <p className="exam-modal-eyebrow">{exam.type === "mid" ? "중간고사" : "기말고사"}</p>
+            <h2>{exam.title}</h2>
+          </div>
+          <button type="button" className="exam-close" onClick={onCancel} aria-label="시험 닫기"><X size={20} /></button>
+        </header>
+        <div className="exam-progress">
+          <div className="exam-progress-bar"><span style={{ width: `${total ? ((index + 1) / total) * 100 : 0}%` }} /></div>
+          <span className="exam-progress-text">{index + 1} / {total} · 답한 문항 {answered}</span>
+        </div>
+        <div className="exam-question">
+          <p className="exam-q-num">문제 {index + 1}</p>
+          <p className="exam-q-prompt">{problem.prompt}</p>
+          {Array.isArray(problem.choices) && problem.choices.length > 0 ? (
+            <div className="exam-choices">
+              {problem.choices.map((choice, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  className={`exam-choice ${answers[index] === choice ? "selected" : ""}`}
+                  onClick={() => setAnswer(choice)}
+                >
+                  <span className="exam-choice-num">{"①②③④⑤"[i] || i + 1}</span>
+                  {choice}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <input
+              className="exam-input"
+              value={answers[index] ?? ""}
+              onChange={(event) => setAnswer(event.target.value)}
+              placeholder="답을 입력하세요"
+            />
+          )}
+        </div>
+        <footer className="exam-modal-foot">
+          <button type="button" className="exam-nav" disabled={index === 0 || submitting} onClick={() => setIndex((i) => Math.max(0, i - 1))}>이전</button>
+          {isLast ? (
+            <button type="button" className="exam-submit" disabled={submitting} onClick={grade}>{submitting ? "제출 중" : "제출하고 채점"}</button>
+          ) : (
+            <button type="button" className="exam-nav primary" disabled={submitting} onClick={() => setIndex((i) => Math.min(total - 1, i + 1))}>다음</button>
+          )}
+        </footer>
+      </div>
+    </div>
+  );
+}
+
+// 시험 결과 모달.
+function ExamResultModal({ result, onClose, onRetry }) {
+  const { title, correct, total, score, passed, bonus } = result;
+  return (
+    <div className="exam-result-backdrop" role="dialog" aria-modal="true" onClick={onClose}>
+      <div className={`exam-result-modal ${passed ? "passed" : "failed"}`} onClick={(event) => event.stopPropagation()}>
+        <div className="exam-result-icon">{passed ? <Trophy size={42} /> : <RefreshCw size={40} />}</div>
+        <p className="exam-result-eyebrow">{title}</p>
+        <h2>{passed ? "합격!" : "불합격"}</h2>
+        <p className="exam-result-score">{score}점 <span>({correct} / {total})</span></p>
+        {passed && bonus ? <p className="exam-result-bonus">+{bonus.toLocaleString()} XP 보너스</p> : null}
+        {!passed && <p className="exam-result-note">60점 이상이면 합격입니다. 다시 도전해보세요!</p>}
+        <div className="exam-result-actions">
+          {!passed && <button type="button" className="exam-result-retry" onClick={onRetry}>다시 응시</button>}
+          <button type="button" className="exam-result-close" onClick={onClose}>확인</button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -946,12 +1421,6 @@ function ParentPage({ user, profile, members, attempts, leaders, onRegisterChild
   return (
     <main className="app-shell parent-shell">
       <Topbar user={user} profile={profile} onLogout={onLogout} />
-      <div className="parent-report-bar">
-        <button type="button" onClick={() => setReportModalOpen(true)} disabled={!children.length}>
-          <Printer size={14} />
-          자녀 리포트 PDF 다운로드
-        </button>
-      </div>
       {reportModalOpen && (
         <ParentReportModal
           children={children}
@@ -962,7 +1431,14 @@ function ParentPage({ user, profile, members, attempts, leaders, onRegisterChild
         />
       )}
       <section className="parent-layout">
-        <ParentInsightPanel profile={profile} members={members} attempts={attempts} onRegisterChild={onRegisterChild} />
+        <ParentInsightPanel
+          profile={profile}
+          members={members}
+          attempts={attempts}
+          onRegisterChild={onRegisterChild}
+          onReportOpen={() => setReportModalOpen(true)}
+          reportDisabled={!children.length}
+        />
         <Leaderboard
           leaders={leaders}
           currentUid={primaryChild?.uid || user.uid}
@@ -1069,7 +1545,7 @@ function getCurrentMonthPeriod(date = new Date()) {
   return { startTime: start.getTime(), endTime: end.getTime(), label };
 }
 
-function Topbar({ user, profile, rank = 0, onLogout }) {
+function Topbar({ user, profile, rank = 0, onRankClick, onLogout }) {
   return (
     <header className="topbar">
       <div className="brand-block">
@@ -1084,10 +1560,10 @@ function Topbar({ user, profile, rank = 0, onLogout }) {
 
       <div className="topbar-actions">
         {(profile.role || "student") === "student" && (
-          <div className="stat-pill rank-pill">
+          <button type="button" className="stat-pill rank-pill" onClick={onRankClick} aria-label="랭킹 열기">
             <Crown size={16} />
             <span>{rank > 0 ? `#${rank}` : "-"}</span>
-          </div>
+          </button>
         )}
         {(profile.role || "student") === "student" && (
           <div className="stat-pill">
@@ -1104,6 +1580,25 @@ function Topbar({ user, profile, rank = 0, onLogout }) {
         </button>
       </div>
     </header>
+  );
+}
+
+function RankingModal({ children, onClose }) {
+  return (
+    <div className="ranking-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="ranking-modal-title" onClick={onClose}>
+      <div className="ranking-modal" onClick={(event) => event.stopPropagation()}>
+        <div className="ranking-modal-head">
+          <div className="section-title">
+            <Crown size={18} />
+            <h2 id="ranking-modal-title">랭킹</h2>
+          </div>
+          <button type="button" className="modal-close-button" onClick={onClose} aria-label="랭킹 닫기">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="ranking-modal-body">{children}</div>
+      </div>
+    </div>
   );
 }
 
@@ -1657,18 +2152,18 @@ function MemberManager({ members, onRoleUpdate }) {
             <tbody>
               {members.slice(0, 80).map((member) => (
                 <tr key={member.uid}>
-                  <td>
+                  <td data-label="회원">
                     <strong>{formatAdminMemberName(member, members)}</strong>
                     <small>{member.email}</small>
                   </td>
-                  <td>
+                  <td data-label="이름">
                     <input
                       defaultValue={member.displayName || ""}
                       onBlur={(event) => saveMember(member, { displayName: event.target.value })}
                       aria-label="학생 이름"
                     />
                   </td>
-                  <td>
+                  <td data-label="학년">
                     <input
                       defaultValue={member.grade || ""}
                       onBlur={(event) => saveMember(member, { grade: event.target.value })}
@@ -1676,7 +2171,7 @@ function MemberManager({ members, onRoleUpdate }) {
                       placeholder="학년"
                     />
                   </td>
-                  <td>
+                  <td data-label="XP">
                     <input
                       type="number"
                       min="0"
@@ -1685,7 +2180,7 @@ function MemberManager({ members, onRoleUpdate }) {
                       aria-label="XP"
                     />
                   </td>
-                  <td>
+                  <td data-label="해결">
                     <input
                       type="number"
                       min="0"
@@ -1694,7 +2189,7 @@ function MemberManager({ members, onRoleUpdate }) {
                       aria-label="해결 수"
                     />
                   </td>
-                  <td>
+                  <td data-label="초기화">
                     <button
                       className="member-reset-button"
                       onClick={async () => {
@@ -1703,14 +2198,14 @@ function MemberManager({ members, onRoleUpdate }) {
                       }}
                     >초기화</button>
                   </td>
-                  <td>
+                  <td data-label="권한">
                     <select value={member.role || "student"} onChange={(event) => handleRoleChange(member, event.target.value)}>
                       <option value="student">student</option>
                       <option value="parents">parents</option>
                       <option value="admin">admin</option>
                     </select>
                   </td>
-                  <td>
+                  <td data-label="자녀">
                     {(member.role || "student") === "parents" ? (
                       <div className="member-child-list">
                         {(member.parentOf || []).length ? (
@@ -1793,6 +2288,7 @@ function AdminProblemManager({ onSaveProblem }) {
       ].join(" ").toLowerCase().includes(normalizedQuery);
     });
   const visibleRows = rows.slice(0, 50);
+  const qualityIssues = analyzeProblemQuality(rows);
 
   function updateDraft(problemId, patch) {
     setDrafts((current) => ({
@@ -1843,7 +2339,30 @@ function AdminProblemManager({ onSaveProblem }) {
         <StatCard label="전체 문제" value={`${problems.length.toLocaleString()}개`} />
         <StatCard label="조회 결과" value={`${rows.length.toLocaleString()}개`} />
         <StatCard label="화면 표시" value={`${visibleRows.length.toLocaleString()}개`} />
-        <StatCard label="상태" value={loading ? "로딩 중" : "준비"} />
+        <StatCard label="품질 점검" value={qualityIssues.length ? `${qualityIssues.length}건` : "정상"} />
+      </div>
+      <div className={`problem-quality-panel ${qualityIssues.length ? "has-issues" : ""}`}>
+        <strong>문제 품질 체크</strong>
+        {qualityIssues.length ? (
+          <div className="problem-quality-list">
+            {qualityIssues.slice(0, 8).map((issue) => (
+              <button
+                type="button"
+                key={`${issue.problem.id}-${issue.type}`}
+                onClick={() => {
+                  setSkillFilter(issue.problem.nodeId);
+                  setQuery(issue.problem.id);
+                }}
+              >
+                <span>{issue.type}</span>
+                <b>{getSkillTitle(issue.problem.nodeId)}</b>
+                <em>{issue.message}</em>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p>정답 누락, 객관식 정답 불일치, 긴 문항 문제가 없습니다.</p>
+        )}
       </div>
       {rows.length > visibleRows.length && <p className="problem-admin-note">브라우저 성능을 위해 상위 50개만 표시합니다. 단원 필터나 검색으로 좁혀서 수정하세요.</p>}
       <div className="activity-table-wrap problem-admin-table-wrap">
@@ -1866,9 +2385,9 @@ function AdminProblemManager({ onSaveProblem }) {
               const dirty = !!drafts[problem.id];
               return (
                 <tr key={problem.id}>
-                  <td className="col-category">{getSkillTitle(problem.nodeId)}</td>
-                  <td className="col-problem-no">{problem.title?.replace(/\D+/g, "") || problem.id.split("-").pop()}</td>
-                  <td className="col-difficulty">
+                  <td className="col-category" data-label="단원">{getSkillTitle(problem.nodeId)}</td>
+                  <td className="col-problem-no" data-label="번호">{problem.title?.replace(/\D+/g, "") || problem.id.split("-").pop()}</td>
+                  <td className="col-difficulty" data-label="난이도">
                     <input
                       className="problem-cell-input small"
                       type="number"
@@ -1878,42 +2397,42 @@ function AdminProblemManager({ onSaveProblem }) {
                       onChange={(event) => updateDraft(problem.id, { difficulty: event.target.value })}
                     />
                   </td>
-                  <td className="col-problem">
+                  <td className="col-problem" data-label="문제">
                     <textarea
                       className="problem-cell-input"
                       value={problem.prompt || ""}
                       onChange={(event) => updateDraft(problem.id, { prompt: event.target.value })}
                     />
                   </td>
-                  <td className="col-answer">
+                  <td className="col-answer" data-label="정답">
                     <input
                       className="problem-cell-input answer"
                       value={problem.answer || ""}
                       onChange={(event) => updateDraft(problem.id, { answer: event.target.value })}
                     />
                   </td>
-                  <td className="col-problem">
+                  <td className="col-problem" data-label="힌트">
                     <textarea
                       className="problem-cell-input"
                       value={problem.hint || ""}
                       onChange={(event) => updateDraft(problem.id, { hint: event.target.value })}
                     />
                   </td>
-                  <td className="col-problem">
+                  <td className="col-problem" data-label="풀이 방향">
                     <textarea
                       className="problem-cell-input"
                       value={problem.nextStep || ""}
                       onChange={(event) => updateDraft(problem.id, { nextStep: event.target.value })}
                     />
                   </td>
-                  <td className="col-problem">
+                  <td className="col-problem" data-label="개념 학습">
                     <textarea
                       className="problem-cell-input"
                       value={problem.conceptGuide || ""}
                       onChange={(event) => updateDraft(problem.id, { conceptGuide: event.target.value })}
                     />
                   </td>
-                  <td className="col-status">
+                  <td className="col-status" data-label="저장">
                     <button
                       className="problem-save-button"
                       disabled={!dirty || savingId === problem.id}
@@ -1974,7 +2493,7 @@ function AdminLearningDashboard({ members, attempts }) {
           <TrendingUp size={18} />
           <h2>학습 통계</h2>
         </div>
-        <div className="admin-dashboard-actions">
+        <div className="admin-dashboard-actions learning-report-actions">
           <select value={selectedStudentId} onChange={(event) => setSelectedStudentId(event.target.value)} aria-label="학생 조회">
             <option value="">전체 학생</option>
             {students.map((student) => (
@@ -2323,6 +2842,7 @@ function formatLogDate(log) {
 }
 
 function getLogTime(log) {
+  if (typeof log.createdAtMs === "number") return log.createdAtMs;
   const source = log.createdAt;
   if (!source) return 0;
   if (typeof source.seconds === "number") return source.seconds * 1000;
@@ -2343,6 +2863,7 @@ function getAuditActionLabel(action) {
     problem_saved: "풀이 저장",
     problem_completed: "해결 완료",
     ai_guide: "AI 가이드",
+    exam_submitted: "시험 응시",
   };
   return labels[action] || action || "-";
 }
@@ -2353,6 +2874,7 @@ function getAuditCategoryLabel(log) {
     parent: "학부모",
     learning: getSkillTitle(log.metadata?.nodeId) || "문제 풀이",
     ai: "AI 사용",
+    exam: "시험",
     system: "시스템",
   };
   return labels[log.category] || log.category || "감사";
@@ -2362,6 +2884,7 @@ function formatAuditMetadata(log) {
   const metadata = log.metadata || {};
   if (log.action === "parent_view") return `자녀 ${metadata.parentOf?.length || 0}명`;
   if (log.action === "ai_guide") return metadata.totalTokens ? `${Number(metadata.totalTokens).toLocaleString()} 토큰` : "AI 사용";
+  if (log.action === "exam_submitted") return metadata.score != null ? `${metadata.score}점` : "시험";
   if (log.category === "learning") return metadata.helpUsed?.length ? `${metadata.helpUsed.length}개 도움` : "-";
   if (log.category === "auth") return metadata.role || log.role || "-";
   return "-";
@@ -2585,7 +3108,8 @@ function buildSkillStatusChart(completedAttempts, students) {
 
   for (const node of curriculumNodes) {
     const counts = students.map((student) => completedByStudentSkill.get(`${student.uid}-${node.id}`)?.size || 0);
-    if (counts.some((count) => count >= 50)) {
+    const requiredCount = getProblemCountForSkill(node.id);
+    if (counts.some((count) => count >= requiredCount)) {
       completed += 1;
     } else if (counts.some((count) => count > 0)) {
       inProgress += 1;
@@ -2637,7 +3161,7 @@ function getLocalDateKey(date) {
   return `${year}-${month}-${day}`;
 }
 
-function ParentInsightPanel({ profile, members, attempts, onRegisterChild }) {
+function ParentInsightPanel({ profile, members, attempts, onRegisterChild, onReportOpen, reportDisabled = false }) {
   const [childQuery, setChildQuery] = useState("");
   const students = members
     .filter((member) => member.role === "student")
@@ -2657,12 +3181,19 @@ function ParentInsightPanel({ profile, members, attempts, onRegisterChild }) {
   const avgSolved = students.length
     ? Math.round(students.reduce((sum, student) => sum + (student.solvedCount || 0), 0) / students.length)
     : 0;
+  const weeklySummary = buildParentWeeklySummary(children, displayAttempts);
 
   return (
     <div className="parent-insight">
       <div className="section-title">
         <Users size={18} />
         <h2>자녀 학습 현황</h2>
+        {onReportOpen && (
+          <button type="button" className="section-action-button" onClick={onReportOpen} disabled={reportDisabled}>
+            <Printer size={14} />
+            자녀 리포트 PDF
+          </button>
+        )}
       </div>
 
       {onRegisterChild && (
@@ -2699,6 +3230,20 @@ function ParentInsightPanel({ profile, members, attempts, onRegisterChild }) {
       )}
 
       <div className="child-list">
+        {children.length > 0 && (
+          <div className="weekly-summary-card">
+            <div className="section-title">
+              <TrendingUp size={17} />
+              <h2>이번 주 요약</h2>
+            </div>
+            <div className="weekly-summary-grid">
+              <div><span>해결</span><strong>{weeklySummary.completed}문제</strong></div>
+              <div><span>오답</span><strong>{weeklySummary.wrong}회</strong></div>
+              <div><span>최근 학습</span><strong>{weeklySummary.lastStudyLabel}</strong></div>
+            </div>
+            <p>{weeklySummary.note}</p>
+          </div>
+        )}
         {children.length ? children.map((child) => {
           const rankIndex = students.findIndex((student) => student.uid === child.uid);
           const above = rankIndex > 0 ? students[rankIndex - 1] : null;
@@ -2954,6 +3499,71 @@ function buildFallbackAttemptsForChildren(children, attempts) {
     if (a.restoredFromProfile && b.restoredFromProfile) return (a.sortIndex || 0) - (b.sortIndex || 0);
     return String(b.problemId || "").localeCompare(String(a.problemId || ""));
   });
+}
+
+function buildWrongNotebookItems(attempts, solvedBySkill = {}) {
+  const solvedKeys = new Set();
+  for (const [nodeId, problemIds] of Object.entries(solvedBySkill || {})) {
+    for (const problemId of problemIds || []) solvedKeys.add(`${nodeId}-${problemId}`);
+  }
+  attempts
+    .filter((attempt) => attempt.completed)
+    .forEach((attempt) => solvedKeys.add(`${attempt.nodeId}-${attempt.problemId}`));
+
+  const grouped = new Map();
+  attempts
+    .filter((attempt) => attempt.status === "wrong" || attempt.wrong)
+    .forEach((attempt) => {
+      const key = `${attempt.nodeId}-${attempt.problemId}`;
+      if (solvedKeys.has(key)) return;
+      const current = grouped.get(key) || {
+        nodeId: attempt.nodeId,
+        problemId: attempt.problemId,
+        ...getProblemText(attempt),
+        count: 0,
+        latestTime: 0,
+      };
+      grouped.set(key, {
+        ...current,
+        count: current.count + 1,
+        latestTime: Math.max(current.latestTime, getAttemptTime(attempt) || 0),
+      });
+    });
+  return Array.from(grouped.values()).sort((a, b) => b.latestTime - a.latestTime || b.count - a.count);
+}
+
+function buildParentWeeklySummary(children, attempts) {
+  const childIds = new Set(children.map((child) => child.uid));
+  const now = Date.now();
+  const weekAgo = now - 7 * 24 * 60 * 60 * 1000;
+  const weekly = attempts.filter((attempt) => childIds.has(attempt.uid) && (getAttemptTime(attempt) || 0) >= weekAgo);
+  const completed = weekly.filter((attempt) => attempt.completed).length;
+  const wrong = weekly.filter((attempt) => attempt.status === "wrong" || attempt.wrong).length;
+  const lastTime = Math.max(0, ...attempts.filter((attempt) => childIds.has(attempt.uid)).map(getAttemptTime));
+  const lastStudyLabel = lastTime ? new Intl.DateTimeFormat("ko-KR", { month: "2-digit", day: "2-digit" }).format(new Date(lastTime)) : "-";
+  const topWrong = buildTopSkillMetricChart(weekly.filter((attempt) => attempt.status === "wrong" || attempt.wrong), undefined, 1)[0];
+  const note = topWrong
+    ? `${topWrong.label}에서 오답이 가장 많이 나왔습니다.`
+    : completed
+      ? "이번 주 학습 기록이 안정적으로 쌓이고 있습니다."
+      : "이번 주 학습 기록이 아직 없습니다.";
+  return { completed, wrong, lastStudyLabel, note };
+}
+
+function analyzeProblemQuality(problems) {
+  const issues = [];
+  for (const problem of problems) {
+    const prompt = String(problem.prompt || "").trim();
+    const answer = String(problem.answer ?? "").trim();
+    if (!prompt) issues.push({ type: "문제 누락", message: "문제 내용이 비어 있습니다.", problem });
+    if (!answer) issues.push({ type: "정답 누락", message: "정답이 비어 있습니다.", problem });
+    if (prompt.length > 180) issues.push({ type: "긴 문항", message: `문제가 ${prompt.length}자로 깁니다.`, problem });
+    if (Array.isArray(problem.choices) && problem.choices.length) {
+      const hasAnswer = problem.choices.some((choice) => normalizeMathAnswer(choice) === normalizeMathAnswer(answer));
+      if (answer && !hasAnswer) issues.push({ type: "객관식", message: "정답이 보기 안에 없습니다.", problem });
+    }
+  }
+  return issues;
 }
 
 function ChildActivityLog({ children, attempts }) {
@@ -3246,6 +3856,7 @@ const NotebookPanel = forwardRef(function NotebookPanel(
     answerCheck,
     saving,
     solvedCount,
+    totalProblemCount,
     solvedIds = [],
     hintCount,
     onAnswerCheck,
@@ -3520,10 +4131,10 @@ const NotebookPanel = forwardRef(function NotebookPanel(
       <div className="skill-progress-bar">
         <div className="skill-progress-meta">
           <span><BookOpen size={12} /> 스킬 진행도</span>
-          <strong>{Math.min(50, solvedCount)}문제 완료</strong>
+          <strong>{Math.min(totalProblemCount, solvedCount)}문제 완료</strong>
         </div>
         <div className="skill-progress-track">
-          <div className="skill-progress-fill" style={{ width: `${Math.min(100, solvedCount / 50 * 100)}%` }} />
+          <div className="skill-progress-fill" style={{ width: `${Math.min(100, solvedCount / Math.max(1, totalProblemCount) * 100)}%` }} />
         </div>
       </div>
 
