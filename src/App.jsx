@@ -87,7 +87,6 @@ const fallbackUser = {
 };
 
 const guideActions = [
-  { key: "check", label: "AI 가이드", icon: ShieldCheck },
   { key: "next", label: "풀이 방향", icon: ChevronRight, xpPenalty: true },
   { key: "hint", label: "힌트 받기", icon: HelpCircle, xpPenalty: true },
   { key: "concept", label: "개념 학습", icon: BookOpen },
@@ -224,8 +223,8 @@ const GUIDE_STEPS = [
   },
   {
     selector: ".guide-actions",
-    title: "AI 가이드",
-    desc: "막힐 때 AI가 힌트와 풀이 방향을 알려드립니다",
+    title: "풀이 도우미",
+    desc: "막힐 때 힌트·풀이 방향·개념 보기를 눌러 도움을 받으세요",
     side: "left",
   },
 ];
@@ -961,7 +960,7 @@ export default function App() {
       return true;
     }
 
-    setGuide("정답이 아닙니다. 내 풀이 점검을 눌러 어디서 어긋났는지 확인하세요.");
+    setGuide("정답이 아닙니다. 힌트나 풀이 방향을 눌러 어디서 어긋났는지 확인하세요.");
     try {
       const helpUsedWrong = Array.isArray(hintUsed[selectedProblem.id]) ? hintUsed[selectedProblem.id] : [];
       await saveAttempt({
@@ -4584,7 +4583,7 @@ const NotebookPanel = forwardRef(function NotebookPanel(
               );
             })}
             {answerCheck?.status === "correct" && <small className="answer-msg correct">✓ 정답입니다!</small>}
-            {answerCheck?.status === "wrong" && <small className="answer-msg wrong">✗ 오답입니다. 풀이 점검을 활용하세요.</small>}
+            {answerCheck?.status === "wrong" && <small className="answer-msg wrong">✗ 오답입니다. 힌트·풀이 방향을 활용하세요.</small>}
           </div>
         )}
       </div>
@@ -4614,7 +4613,7 @@ const NotebookPanel = forwardRef(function NotebookPanel(
           </div>
         )}
         {!(selectedProblem?.choices?.length > 0) && answerCheck?.status === "correct" && <small className="answer-msg correct">✓ 정답입니다!</small>}
-        {!(selectedProblem?.choices?.length > 0) && answerCheck?.status === "wrong" && <small className="answer-msg wrong">✗ 오답입니다. 풀이 점검을 활용하세요.</small>}
+        {!(selectedProblem?.choices?.length > 0) && answerCheck?.status === "wrong" && <small className="answer-msg wrong">✗ 오답입니다. 힌트·풀이 방향을 활용하세요.</small>}
         <div className="save-row">
           <button onClick={() => onSave(false)} disabled={saving}>
             <Save size={17} />
