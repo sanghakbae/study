@@ -212,7 +212,7 @@ const GUIDE_STEPS = [
     side: "top",
   },
   {
-    selector: ".guide-panel",
+    selector: ".guide-actions",
     title: "AI 가이드",
     desc: "막힐 때 AI가 힌트와 풀이 방향을 알려드립니다",
     side: "left",
@@ -229,27 +229,52 @@ function OnboardingGuide({ onDone }) {
   }, [step]);
 
   useEffect(() => {
-    updateRect();
+    const el = document.querySelector(GUIDE_STEPS[step].selector);
+    if (el) {
+      // 대상이 화면 밖이면 먼저 화면 안으로 스크롤한 뒤 위치를 잰다.
+      el.scrollIntoView({ block: "center", behavior: "auto" });
+    }
+    // 스크롤이 반영된 다음 프레임에 측정
+    const raf = requestAnimationFrame(() => {
+      requestAnimationFrame(updateRect);
+    });
     window.addEventListener("resize", updateRect);
-    return () => window.removeEventListener("resize", updateRect);
-  }, [updateRect]);
+    window.addEventListener("scroll", updateRect, true);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", updateRect);
+      window.removeEventListener("scroll", updateRect, true);
+    };
+  }, [updateRect, step]);
 
   const current = GUIDE_STEPS[step];
   const isLast = step === GUIDE_STEPS.length - 1;
   const PAD = 6;
 
+  const isMobile = typeof window !== "undefined" && window.innerWidth <= 720;
+
   const calloutStyle = (() => {
     if (!rect) return {};
     const GAP = 16;
+    // 모바일: 대상을 화면 안으로 스크롤한 뒤, 그 요소 위/아래 빈 공간에 말풍선을 붙인다.
+    if (isMobile) {
+      const spaceBelow = window.innerHeight - rect.bottom;
+      if (spaceBelow > 170) {
+        // 요소 아래에 충분한 공간이 있으면 아래에 표시
+        return { left: 8, right: 8, top: rect.bottom + GAP, maxWidth: "none" };
+      }
+      // 아니면 요소 위에 표시
+      return { left: 8, right: 8, bottom: window.innerHeight - rect.top + GAP, maxWidth: "none" };
+    }
     switch (current.side) {
       case "bottom":
         return { left: Math.max(8, rect.left), top: rect.bottom + PAD + GAP, maxWidth: Math.min(280, window.innerWidth - 16) };
       case "top":
         return { left: Math.max(8, rect.left), bottom: window.innerHeight - rect.top + PAD + GAP, maxWidth: Math.min(280, window.innerWidth - 16) };
       case "left":
-        return { right: window.innerWidth - rect.left + GAP, top: rect.top, maxWidth: 240 };
+        return { right: window.innerWidth - rect.left + GAP, top: Math.min(rect.top, window.innerHeight - 200), maxWidth: 240 };
       case "right":
-        return { left: rect.right + GAP, top: rect.top, maxWidth: 240 };
+        return { left: rect.right + GAP, top: Math.min(rect.top, window.innerHeight - 200), maxWidth: 240 };
       default:
         return {};
     }
@@ -4586,12 +4611,22 @@ function ProblemAssets({ assets }) {
 function GuidePanel({ problem, guide, guideLoading, reviewCount, answerCheck, isAdmin, onGuide }) {
   const canReview = answerCheck?.status === "wrong";
   const cleanedGuide = cleanGuideMarkdown(guide);
+  // 로그인 직후에는 펼친 상태로 시작한다. (모바일은 우측 버튼으로 접을 수 있음)
+  const [collapsed, setCollapsed] = useState(false);
 
   return (
-    <aside className="guide-panel">
+    <aside className={`guide-panel ${collapsed ? "guide-collapsed" : ""}`}>
       <div className="section-title">
         <Wand2 size={18} />
         <h2>풀이 도우미</h2>
+        <button
+          type="button"
+          className="guide-collapse-toggle"
+          aria-expanded={!collapsed}
+          onClick={() => setCollapsed((v) => !v)}
+        >
+          {collapsed ? "펼치기" : "접기"}
+        </button>
       </div>
 
       <div className="guide-actions">

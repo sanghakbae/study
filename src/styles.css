@@ -1421,6 +1421,11 @@ button.stat-pill:hover {
   justify-content: space-between;
 }
 
+/* 풀이 도우미 접기 버튼: 데스크톱에서는 숨김, 모바일에서만 노출 */
+.guide-collapse-toggle {
+  display: none;
+}
+
 .section-title-label {
   display: flex;
   align-items: center;
@@ -4357,7 +4362,7 @@ li:nth-child(3) .rank-num { color: #b45309; }
   .skill-panel,
   .notebook-panel,
   .guide-panel {
-    padding: 6px 8px;
+    padding: 3px 4px;
   }
 
   .leader-panel .section-title svg {
@@ -4585,7 +4590,7 @@ li:nth-child(3) .rank-num { color: #b45309; }
   /* 여백 축소 */
   .notebook-panel,
   .guide-panel {
-    padding: 6px 8px !important;
+    padding: 3px 4px !important;
   }
 
   .problem-header {
@@ -4810,6 +4815,7 @@ li:nth-child(3) .rank-num { color: #b45309; }
     overflow: visible;
     overflow-x: hidden;
     padding: 8px;
+    padding-bottom: max(32px, calc(env(safe-area-inset-bottom, 0px) + 24px));
   }
 
   .topbar,
@@ -5046,7 +5052,8 @@ li:nth-child(3) .rank-num { color: #b45309; }
   }
 
   .brand-block strong {
-    font-size: calc(0.72rem + 2px);
+    font-size: 0.72rem;
+    white-space: nowrap;
   }
 
   .brand-block span {
@@ -5068,10 +5075,6 @@ li:nth-child(3) .rank-num { color: #b45309; }
   .topbar-actions .icon-button {
     height: 28px;
     min-height: 28px;
-  }
-
-  .topbar-menu-label {
-    display: inline;
   }
 
   .topbar-actions .icon-button {
@@ -5127,13 +5130,13 @@ li:nth-child(3) .rank-num { color: #b45309; }
     flex-direction: row;
     align-items: center;
     gap: 5px;
-    margin-bottom: 3px;
+    padding-bottom: 2px;
+    margin-bottom: 2px;
   }
 
   .problem-header > div:first-child {
-    flex: 0 0 78px;
     min-width: 0;
-    text-align: center;
+    text-align: left;
   }
 
   .problem-header span {
@@ -5155,10 +5158,12 @@ li:nth-child(3) .rank-num { color: #b45309; }
     display: flex;
     gap: 5px;
     align-items: center;
+    justify-content: flex-end;
   }
 
   .problem-header-actions select {
-    flex: 1;
+    flex: 0 1 150px;
+    max-width: 150px;
     min-width: 0;
   }
 
@@ -5289,21 +5294,23 @@ li:nth-child(3) .rank-num { color: #b45309; }
   }
 
   .mc-choices {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: 1fr;
     display: grid;
     gap: 2px;
     padding: 2px 0;
+    width: 84px;
+    min-width: 84px;
   }
 
   .mc-choice {
     min-width: 0;
-    min-height: 34px;
-    justify-content: center;
-    gap: 1px;
-    padding: 5px;
+    min-height: 36px;
+    justify-content: flex-start;
+    gap: 6px;
+    padding: 6px 10px;
     font-size: 0.92rem;
     line-height: 1.05;
-    text-align: center;
+    text-align: left;
     word-break: keep-all;
   }
 
@@ -5315,6 +5322,38 @@ li:nth-child(3) .rank-num { color: #b45309; }
   .guide-panel {
     min-height: 0;
     overflow: visible;
+  }
+
+  .guide-collapse-toggle {
+    width: 48px;
+    min-width: 48px;
+    min-height: 26px;
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 5px;
+    border: 1px solid #cbd5e1;
+    border-radius: 5px;
+    background: #f8fafc;
+    color: #0f172a;
+    font-size: 0.82rem;
+    font-weight: 900;
+    white-space: nowrap;
+  }
+
+  /* 접힌 상태: 제목줄만 남기고 본문 숨김 */
+  .guide-panel.guide-collapsed .guide-actions,
+  .guide-panel.guide-collapsed .guide-output,
+  .guide-panel.guide-collapsed .answer-box,
+  .guide-panel.guide-collapsed .tablet-note {
+    display: none;
+  }
+
+  .guide-panel.guide-collapsed .section-title {
+    margin-bottom: 0;
+    padding-bottom: 0;
+    border-bottom: none;
   }
 
   .guide-actions {
@@ -6239,6 +6278,7 @@ button.stat-pill:hover,
 .problem-header-actions select,
 .mobile-skill-toggle,
 .mobile-solve-toggle,
+.guide-collapse-toggle,
 .tool-row button,
 .save-row button,
 .guide-actions button,
@@ -6494,6 +6534,8 @@ button.stat-pill:hover,
 
   .topbar {
     border-radius: 8px;
+    min-height: 0;
+    padding: 4px 8px;
   }
 
   .skill-panel,
@@ -6506,6 +6548,16 @@ button.stat-pill:hover,
   .parent-layout > .parent-insight,
   .parent-layout > .activity-panel {
     border-radius: 8px;
+  }
+
+  .notebook-panel,
+  .guide-panel {
+    padding: 3px 4px;
+  }
+
+  .problem-header {
+    padding: 4px 0;
+    margin-bottom: 2px;
   }
 }
 
