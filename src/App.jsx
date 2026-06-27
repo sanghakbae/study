@@ -48,7 +48,6 @@ import {
   loadProgressForUsers,
   loadStudyProgressForUser,
   loadSkills,
-  loadUserProfile,
   loadUsers,
   markGuideHelpUsed,
   markAiGuideUsed,
@@ -614,28 +613,30 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
     const skill = skills.find((s) => s.id === selectedSkillId) || curriculumNodes.find((s) => s.id === selectedSkillId);
+    const applyProblems = (items) => {
+      const expectedCount = getProblemCountForSkill(selectedSkillId);
+      const sourceProblems = items.length >= expectedCount ? items : getFallbackProblems(skill);
+      const nextProblems = sortProblemsByNumber(sourceProblems).slice(0, expectedCount);
+      const savedLocation = { skillId: profile.lastSkillId, problemId: profile.lastProblemId };
+      const solvedIds = solvedBySkillRef.current[selectedSkillId] || [];
+      const nextProblemId = chooseProblemId({ problems: nextProblems, savedLocation, skillId: selectedSkillId, solvedIds });
+      setProblems(nextProblems);
+      setSelectedProblemId(nextProblemId);
+    };
+    if (profile.role !== "admin") {
+      applyProblems(getFallbackProblems(skill));
+      return;
+    }
     loadProblemsBySkill(selectedSkillId)
       .then((items) => {
-        const expectedCount = getProblemCountForSkill(selectedSkillId);
-        const sourceProblems = items.length >= expectedCount ? items : getFallbackProblems(skill);
-        const nextProblems = sortProblemsByNumber(sourceProblems).slice(0, expectedCount);
-        const savedLocation = { skillId: profile.lastSkillId, problemId: profile.lastProblemId };
-        const solvedIds = solvedBySkillRef.current[selectedSkillId] || [];
-        const nextProblemId = chooseProblemId({ problems: nextProblems, savedLocation, skillId: selectedSkillId, solvedIds });
-        setProblems(nextProblems);
-        setSelectedProblemId(nextProblemId);
+        applyProblems(items);
       })
       .catch((error) => {
         console.error(error);
-        const nextProblems = sortProblemsByNumber(getFallbackProblems(skill));
-        const savedLocation = { skillId: profile.lastSkillId, problemId: profile.lastProblemId };
-        const solvedIds = solvedBySkillRef.current[selectedSkillId] || [];
-        const nextProblemId = chooseProblemId({ problems: nextProblems, savedLocation, skillId: selectedSkillId, solvedIds });
-        setProblems(nextProblems);
-        setSelectedProblemId(nextProblemId);
+        applyProblems(getFallbackProblems(skill));
         setDataWarning("");
       });
-  }, [selectedSkillId, user, profile.lastSkillId, profile.lastProblemId]);
+  }, [selectedSkillId, user, profile.role, profile.lastSkillId, profile.lastProblemId, skills]);
 
   useEffect(() => {
     if (!authReady || !user || !selectedSkillId || !selectedProblemId) return;
@@ -676,17 +677,15 @@ export default function App() {
 
   async function refreshCatalog() {
     const uid = auth.currentUser?.uid;
+    const shouldLoadCatalogFromDb = auth.currentUser?.email === "totoriverce@gmail.com";
     const [loadedSkills, loadedLeaders, studyProgress] = await Promise.all([
-      loadSkills(),
+      shouldLoadCatalogFromDb ? loadSkills() : Promise.resolve([]),
       loadLeaderboard(),
       uid ? loadStudyProgressForUser(uid) : Promise.resolve({ solvedBySkill: {}, guideHelpUsed: {} }),
     ]);
     if (loadedSkills.length) setSkills(sortSkillsByCurriculumOrder(loadedSkills));
     setLeaderboard(loadedLeaders.filter((u) => u.role === "student" && u.onboardingComplete && !u.isMock));
     let me = loadedLeaders.find((item) => item.uid === uid);
-    if (!me && uid) {
-      me = await loadUserProfile(uid);
-    }
     if (me) setProfile(me);
     setSolvedBySkill(studyProgress.solvedBySkill);
     if (uid) {
@@ -827,7 +826,9 @@ export default function App() {
     await completeOnboarding({ user, role, grade });
     setProfile(nextProfile);
     await refreshCatalog();
-    await refreshMembers(nextProfile);
+    if (["admin", "parents"].includes(nextProfile.role)) {
+      await refreshMembers(nextProfile);
+    }
   }
 
   async function handleDismissLoginGuide() {
@@ -1131,18 +1132,12 @@ export default function App() {
     try {
       const result = await saveExamResult({ user, key, score, total, passed, bonusXp: possibleBonus });
       const bonus = result?.awardedBonus ? possibleBonus : 0;
-      saveAuditLog({
-        user,
-        action: "exam_submitted",
-        category: "exam",
-        message: title,
-        metadata: { role: profile.role || "student", key, score, total, correct: correctCount, passed },
-      }).catch(() => {});
       setExamResultModal({ key, title, correct: correctCount, total, score, passed, bonus });
       setProfile((current) => {
         const previous = current.examResults?.[key];
         return {
           ...current,
+          xp: (Number(current.xp) || 0) + bonus,
           examResults: {
             ...(current.examResults || {}),
             [key]: {
@@ -1155,7 +1150,6 @@ export default function App() {
           },
         };
       });
-      await refreshMembers();
     } catch (error) {
       console.error("시험 결과 저장 실패:", error);
       setExamResultModal({ key, title, correct: correctCount, total, score, passed, bonus: 0 });

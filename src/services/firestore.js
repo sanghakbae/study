@@ -24,9 +24,10 @@ export async function ensureUserProfile(user) {
   const role = user.email === "totoriverce@gmail.com" ? "admin" : "student";
   const isAdmin = role === "admin";
   let isNewUser = false;
+  let profile;
   if (!snap.exists()) {
     isNewUser = true;
-    await setDoc(ref, {
+    profile = {
       uid: user.uid,
       displayName: user.displayName || "수학 러너",
       photoURL: user.photoURL || "",
@@ -46,14 +47,17 @@ export async function ensureUserProfile(user) {
       aiGuideReviewCounts: {},
       createdAt: serverTimestamp(),
       lastSeenAt: serverTimestamp(),
-    });
+    };
+    await setDoc(ref, profile);
   } else {
-    await updateDoc(ref, {
+    const patch = {
       lastSeenAt: serverTimestamp(),
       ...(isAdmin ? { role: "admin", onboardingComplete: true } : {}),
-    });
+    };
+    await updateDoc(ref, patch);
+    profile = { ...snap.data(), ...(isAdmin ? { role: "admin", onboardingComplete: true } : {}) };
   }
-  return { ...(await getDoc(ref)).data(), isNewUser };
+  return { ...profile, isNewUser };
 }
 
 export async function seedCatalogIfNeeded() {
