@@ -354,7 +354,6 @@ export async function saveAttempt({ user, problem, strokes, guide, isCorrect, st
       guide,
       isCorrect: completed && isCorrect,
       status,
-      saved: status === "saved",
       wrong,
       completed,
       xpGain: gain,
@@ -381,10 +380,7 @@ export async function saveAttempt({ user, problem, strokes, guide, isCorrect, st
               completedCount: increment(1),
               lastCompletedProblemId: problem.id,
             }
-          : {
-              savedProblemIds: arrayUnion(problem.id),
-              lastSavedProblemId: problem.id,
-            }),
+          : {}),
       },
       { merge: true },
     );
@@ -394,9 +390,9 @@ export async function saveAttempt({ user, problem, strokes, guide, isCorrect, st
 
   saveAuditLog({
     user,
-    action: completed ? "problem_completed" : wrong ? "problem_wrong" : "problem_saved",
+    action: completed ? "problem_completed" : "problem_wrong",
     category: "learning",
-    message: completed ? "문제 해결 완료" : wrong ? "오답 제출" : "풀이 저장",
+    message: completed ? "문제 해결 완료" : "오답 제출",
     metadata: {
       problemId: problem.id,
       nodeId: problem.nodeId,

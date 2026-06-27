@@ -4,7 +4,6 @@ import {
   Award,
   BookOpen,
   Brush,
-  CheckCircle2,
   ChevronRight,
   Crown,
   Eraser,
@@ -24,7 +23,6 @@ import {
   PenLine,
   Printer,
   RefreshCw,
-  Save,
   Search,
   Share2,
   ShieldCheck,
@@ -87,10 +85,16 @@ const fallbackUser = {
 };
 
 const guideActions = [
-  { key: "next", label: "풀이 방향", icon: ChevronRight, xpPenalty: true },
-  { key: "hint", label: "힌트 받기", icon: HelpCircle, xpPenalty: true },
   { key: "concept", label: "개념 학습", icon: BookOpen },
+  { key: "hint", label: "힌트 받기", icon: HelpCircle, xpPenalty: 0.2 },
+  { key: "next", label: "풀이 방향", icon: ChevronRight, xpPenalty: 0.5 },
 ];
+
+const guideXpPenaltyRates = new Map(
+  guideActions
+    .filter((action) => Number(action.xpPenalty) > 0)
+    .map((action) => [action.key, Number(action.xpPenalty)]),
+);
 
 const notifyEndpoint = "/api/notify";
 
@@ -730,10 +734,12 @@ export default function App() {
     setShowLoginGuide(false);
   }
 
-  function getGuidePenaltyCount(problemId) {
+  function getGuidePenaltyRate(problemId) {
     const used = hintUsed[problemId];
-    if (Array.isArray(used)) return used.length;
-    return Number(used) || 0;
+    if (Array.isArray(used)) {
+      return used.reduce((total, actionKey) => total + (guideXpPenaltyRates.get(actionKey) || 0), 0);
+    }
+    return (Number(used) || 0) * 0.05;
   }
 
   function trackHintUse(problemId, actionKey) {
@@ -824,7 +830,7 @@ export default function App() {
     if (action.key !== "check") return;
 
     if (answerChecks[selectedProblem.id]?.status !== "wrong") {
-      setGuide("## 먼저 정답 확인\n- 내 풀이 점검은 정답 확인 후 틀렸을 때만 사용할 수 있습니다.\n- 맞았다면 해결 완료를 눌러 다음 문제로 넘어가세요.");
+      setGuide("## 먼저 정답 확인\n- 내 풀이 점검은 정답 확인 후 틀렸을 때만 사용할 수 있습니다.\n- 맞았다면 자동으로 다음 문제로 넘어갑니다.");
       return;
     }
 
@@ -865,29 +871,27 @@ export default function App() {
     setGuide(`이 스킬의 ${total}문제를 모두 완료했습니다. 스킬 트리에서 다음 열린 스킬을 선택하세요.`);
   }
 
-  async function handleSaveAttempt(completed, problemOverride = selectedProblem) {
+  async function completeProblem(problemOverride = selectedProblem, submittedAnswerOverride = "") {
     if (!user || !problemOverride) return;
     if (saveAttemptLockRef.current) return;
     saveAttemptLockRef.current = true;
     const problem = problemOverride;
     setSaving(true);
 
-    const hints = getGuidePenaltyCount(problem.id);
+    const guidePenaltyRate = getGuidePenaltyRate(problem.id);
     const helpUsed = Array.isArray(hintUsed[problem.id]) ? hintUsed[problem.id] : [];
-    const submittedAnswer = answerChecks[problem.id]?.input || "";
-    // 힌트 받기·풀이 방향만 XP 5%씩 차감한다. 개념 학습은 기본 제공이라 차감하지 않는다.
-    const xpMultiplier = Math.max(0.3, 1 - hints * 0.05);
+    const submittedAnswer = submittedAnswerOverride || answerChecks[problem.id]?.input || "";
+    // 힌트 받기·풀이 방향만 정해진 비율로 XP를 차감한다. 개념 학습은 기본 제공이라 차감하지 않는다.
+    const xpMultiplier = Math.max(0.3, 1 - guidePenaltyRate);
 
     let completedSkillReward = null;
-    if (completed) {
-      const prevSolved = solvedBySkill[problem.nodeId] || [];
-      const total = getProblemCountForSkill(problem.nodeId);
-      const wasComplete = prevSolved.length >= total;
-      const nowComplete = !prevSolved.includes(problem.id) && prevSolved.length + 1 >= total;
-      if (nowComplete && !wasComplete) {
-        const skill = skills.find((s) => s.id === problem.nodeId) || curriculumNodes.find((s) => s.id === problem.nodeId);
-        completedSkillReward = { skill, bonus: skill?.xp || 0 };
-      }
+    const prevSolved = solvedBySkill[problem.nodeId] || [];
+    const total = getProblemCountForSkill(problem.nodeId);
+    const wasComplete = prevSolved.length >= total;
+    const nowComplete = !prevSolved.includes(problem.id) && prevSolved.length + 1 >= total;
+    if (nowComplete && !wasComplete) {
+      const skill = skills.find((s) => s.id === problem.nodeId) || curriculumNodes.find((s) => s.id === problem.nodeId);
+      completedSkillReward = { skill, bonus: skill?.xp || 0 };
     }
 
     try {
@@ -896,15 +900,15 @@ export default function App() {
         problem,
         strokes: notebookRef.current?.exportStrokes?.() || [],
         guide,
-        isCorrect: completed,
-        status: completed ? "completed" : "saved",
+        isCorrect: true,
+        status: "completed",
         xpMultiplier,
         submittedAnswer,
         helpUsed,
       });
       saveAuditLog({
         user,
-        action: completed ? "problem_completed" : "problem_saved",
+        action: "problem_completed",
         category: "learning",
         message: problem.title || problem.prompt || problem.id || "문제",
         metadata: {
@@ -914,28 +918,23 @@ export default function App() {
           helpUsed,
         },
       }).catch(() => {});
-      if (completed) {
-        markProblemCompleted(problem.id, problem.nodeId);
-        advanceToNextProblem(problem.id);
-        if (completedSkillReward) {
-          setAcquiredSkill(completedSkillReward);
-          if (completedSkillReward.bonus) {
-            try {
-              await awardBonusXp({ user, amount: completedSkillReward.bonus });
-            } catch (error) {
-              console.error("스킬 완주 보너스 지급 실패:", error);
-            }
+      markProblemCompleted(problem.id, problem.nodeId);
+      advanceToNextProblem(problem.id);
+      if (completedSkillReward) {
+        setAcquiredSkill(completedSkillReward);
+        if (completedSkillReward.bonus) {
+          try {
+            await awardBonusXp({ user, amount: completedSkillReward.bonus });
+          } catch (error) {
+            console.error("스킬 완주 보너스 지급 실패:", error);
           }
         }
-      }
-      if (!completed) {
-        setGuide("풀이가 저장됐습니다. 해결 완료를 눌러야 다음 문제로 넘어갑니다.");
       }
       await refreshCatalog();
       await refreshMembers();
     } catch (error) {
       console.error(error);
-      setGuide(`${completed ? "해결 완료" : "저장"} 기록 실패: ${error.message}`);
+      setGuide(`완료 기록 실패: ${error.message}`);
     } finally {
       setSaving(false);
       saveAttemptLockRef.current = false;
@@ -956,7 +955,8 @@ export default function App() {
     }));
 
     if (correct) {
-      setGuide("정답입니다. 풀이 점검 없이 해결 완료를 눌러 다음 문제로 넘어가세요.");
+      setGuide("정답입니다. 다음 문제로 넘어갑니다.");
+      completeProblem(selectedProblem, inputAnswer);
       return true;
     }
 
@@ -1313,9 +1313,8 @@ export default function App() {
           solvedCount={solvedBySkill[selectedSkillId]?.length || 0}
           totalProblemCount={getProblemCountForSkill(selectedSkillId)}
           solvedIds={solvedBySkill[selectedSkillId] || []}
-          hintCount={getGuidePenaltyCount(selectedProblem?.id)}
+          guidePenaltyRate={getGuidePenaltyRate(selectedProblem?.id)}
           onAnswerCheck={handleAnswerCheck}
-          onSave={handleSaveAttempt}
         />
 
         <ResizeHandle workspaceRef={workspaceRef} onResize={setNoteRatio} />
@@ -3203,7 +3202,6 @@ function getAuditActionLabel(action) {
     manager_access_denied: "관리자 접근 거부",
     parent_view: "자녀 학습 조회",
     problem_wrong: "오답 제출",
-    problem_saved: "풀이 저장",
     problem_completed: "해결 완료",
     ai_guide: "AI 가이드",
     exam_submitted: "시험 응시",
@@ -4064,7 +4062,7 @@ function formatHelpUsed(attempt) {
 function getAttemptResult(attempt) {
   if (attempt.completed) return "해결 완료";
   if (attempt.status === "wrong" || attempt.wrong) return "오답";
-  if (attempt.saved || attempt.status === "saved") return "풀이 저장";
+  if (attempt.saved || attempt.status === "saved") return "이전 기록";
   return attempt.status || "-";
 }
 
@@ -4099,7 +4097,7 @@ function ActivityPanel({ members, attempts }) {
           <div className="activity-row" key={attempt.id}>
             <strong>{memberName.get(attempt.uid) || "학생"} · {getProblemText(attempt).title}</strong>
             <span>{getProblemText(attempt).prompt || `${attempt.nodeId} · ${attempt.problemId}`}</span>
-            <small>{attempt.completed ? "해결 완료" : "풀이 저장"}</small>
+            <small>{getAttemptResult(attempt)}</small>
           </div>
         ))
       ) : (
@@ -4201,9 +4199,8 @@ const NotebookPanel = forwardRef(function NotebookPanel(
     solvedCount,
     totalProblemCount,
     solvedIds = [],
-    hintCount,
+    guidePenaltyRate,
     onAnswerCheck,
-    onSave,
   },
   ref,
 ) {
@@ -4213,7 +4210,6 @@ const NotebookPanel = forwardRef(function NotebookPanel(
   const [tool, setTool] = useState("pen");
   const [showGrid, setShowGrid] = useState(false);
   const [handMode, setHandMode] = useState(false);
-  const [showConcept, setShowConcept] = useState(false);
   const [mobileSolveOpen, setMobileSolveOpen] = useState(true);
   const showGridRef = useRef(false);
   const handModeRef = useRef(false);
@@ -4289,7 +4285,6 @@ const NotebookPanel = forwardRef(function NotebookPanel(
     clearCanvas();
     setAnswerInput("");
     setShowConfetti(false);
-    setShowConcept(false);
   }, [selectedProblemId]);
 
 
@@ -4486,31 +4481,15 @@ const NotebookPanel = forwardRef(function NotebookPanel(
           <span>{"★".repeat(selectedProblem?.difficulty || 1)}{"☆".repeat(Math.max(0, 5 - (selectedProblem?.difficulty || 1)))}</span>
           {(() => {
             const baseXp = 30 + (selectedProblem?.difficulty || 1) * 10;
-            const mult = Math.max(0.3, 1 - (hintCount || 0) * 0.05);
+            const mult = Math.max(0.3, 1 - (guidePenaltyRate || 0));
             const earnXp = Math.round(baseXp * mult);
-            return hintCount > 0
+            return guidePenaltyRate > 0
               ? <span className="problem-xp penalty">+{earnXp} XP <s style={{opacity:0.5, fontSize:"0.75em"}}>{baseXp}</s> <small style={{color:"#f59e0b"}}>(-{Math.round((1-mult)*100)}%)</small></span>
               : <span className="problem-xp">+{baseXp} XP</span>;
           })()}
-          <button
-            type="button"
-            className={`concept-inline-toggle ${showConcept ? "active" : ""}`}
-            onClick={() => setShowConcept((prev) => !prev)}
-            aria-pressed={showConcept}
-          >
-            <BookOpen size={14} />
-            {showConcept ? "개념 닫기" : "개념 학습"}
-          </button>
         </div>
         <p>{selectedProblem?.prompt}</p>
         <ProblemAssets assets={selectedProblem?.assets || []} />
-        {showConcept && (
-          <div className="concept-inline">
-            <MarkdownContent>
-              {getFreshProblemGuide(selectedProblem, "conceptGuide") || `## 개념 학습\n- ${selectedProblem?.concept || "이 문제의 핵심 개념을 정리해 보세요."}`}
-            </MarkdownContent>
-          </div>
-        )}
       </article>
 
       <div className="solve-workspace">
@@ -4572,7 +4551,7 @@ const NotebookPanel = forwardRef(function NotebookPanel(
                     if (answerCheck?.status === "correct") return;
                     setAnswerInput(choice);
                     const correct = await onAnswerCheck(choice);
-                    if (correct) { setShowConfetti(true); setTimeout(() => setShowConfetti(false), 3200); setTimeout(() => onSave(true, selectedProblem), 1500); }
+                    if (correct) { setShowConfetti(true); setTimeout(() => setShowConfetti(false), 3200); }
                     else { setShaking(true); setTimeout(() => setShaking(false), 500); }
                   }}
                   disabled={saving}
@@ -4598,14 +4577,14 @@ const NotebookPanel = forwardRef(function NotebookPanel(
               onKeyDown={async (event) => {
                 if (event.key === "Enter" && answerInput.trim()) {
                   const correct = await onAnswerCheck(answerInput);
-                  if (correct) { setShowConfetti(true); setTimeout(() => setShowConfetti(false), 3200); setTimeout(() => onSave(true, selectedProblem), 1500); }
+                  if (correct) { setShowConfetti(true); setTimeout(() => setShowConfetti(false), 3200); }
                   else { setShaking(true); setTimeout(() => setShaking(false), 500); }
                 }
               }}
             />
             <button className="answer-confirm-btn" onClick={async () => {
               const correct = await onAnswerCheck(answerInput);
-              if (correct) { setShowConfetti(true); setTimeout(() => setShowConfetti(false), 3200); setTimeout(() => onSave(true, selectedProblem), 1500); }
+              if (correct) { setShowConfetti(true); setTimeout(() => setShowConfetti(false), 3200); }
               else { setShaking(true); setTimeout(() => setShaking(false), 500); }
             }} disabled={saving || !answerInput.trim()}>
               확인
@@ -4614,16 +4593,6 @@ const NotebookPanel = forwardRef(function NotebookPanel(
         )}
         {!(selectedProblem?.choices?.length > 0) && answerCheck?.status === "correct" && <small className="answer-msg correct">✓ 정답입니다!</small>}
         {!(selectedProblem?.choices?.length > 0) && answerCheck?.status === "wrong" && <small className="answer-msg wrong">✗ 오답입니다. 힌트·풀이 방향을 활용하세요.</small>}
-        <div className="save-row">
-          <button onClick={() => onSave(false)} disabled={saving}>
-            <Save size={17} />
-            풀이 저장
-          </button>
-          <button className="primary" onClick={() => onSave(true, selectedProblem)} disabled={saving || answerCheck?.status !== "correct"}>
-            <CheckCircle2 size={17} />
-            해결 완료
-          </button>
-        </div>
       </div>
       </div>
     </section>
@@ -4676,8 +4645,8 @@ function GuidePanel({ problem, guide, guideLoading, reviewCount, answerCheck, is
             <button key={action.key} onClick={() => onGuide(action)} disabled={disabled}>
               <Icon size={17} />
               <span>{action.label}</span>
-              {action.xpPenalty && <small>XP -5%</small>}
-              {action.key === "concept" && <small className="free">기본 제공</small>}
+              {action.xpPenalty && <small>XP -{Math.round(action.xpPenalty * 100)}%</small>}
+              {action.key === "concept" && <small className="free">XP -0%</small>}
             </button>
           );
         })}

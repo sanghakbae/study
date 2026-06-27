@@ -400,6 +400,7 @@ button:disabled {
   padding: 0 12px;
   font-size: 0.86rem;
   font-weight: 950;
+  white-space: nowrap;
 }
 
 .admin-sidebar button.active {
@@ -2060,51 +2061,6 @@ button.stat-pill:hover {
   margin-bottom: 6px;
 }
 
-.concept-inline-toggle {
-  margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 9px;
-  border-radius: 5px;
-  border: 1px solid #c7d2fe;
-  background: #eef2ff;
-  color: #4338ca;
-  font-size: 0.72rem;
-  font-weight: 700;
-  transition: background 0.12s, border-color 0.12s, color 0.12s;
-}
-
-.concept-inline-toggle:hover {
-  background: #e0e7ff;
-  border-color: #a5b4fc;
-}
-
-.concept-inline-toggle.active {
-  background: linear-gradient(135deg, #6366f1, #4f46e5);
-  border-color: transparent;
-  color: #fff;
-}
-
-.concept-inline {
-  margin-top: 10px;
-  padding: 10px 12px;
-  border-radius: 8px;
-  border: 1px solid #e0e7ff;
-  background: #f5f7ff;
-  font-size: 0.82rem;
-  line-height: 1.5;
-  color: #1e293b;
-}
-
-.concept-inline > :first-child {
-  margin-top: 0;
-}
-
-.concept-inline > :last-child {
-  margin-bottom: 0;
-}
-
 
 .problem-card-meta span:first-child {
   color: #fbbf24;
@@ -2609,7 +2565,7 @@ li:nth-child(3) .rank-num { color: #b45309; }
 .member-child-list span {
   min-width: 0;
   display: block;
-  padding: 3px 4px;
+  padding: 3px 3.2px;
   border: 1px solid #dbe3ef;
   border-radius: 4px;
   background: #f8fafc;
@@ -3863,7 +3819,7 @@ li:nth-child(3) .rank-num { color: #b45309; }
 
 .guide-actions {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
 }
 
@@ -3872,11 +3828,11 @@ li:nth-child(3) .rank-num { color: #b45309; }
   white-space: nowrap;
   flex-direction: row;
   justify-content: flex-start;
-  gap: 4px;
-  padding: 1px 6px;
+  gap: 2px;
+  padding: 3px 3.2px;
   min-height: 0;
   border-radius: 5px;
-  font-size: 0.78rem;
+  font-size: 0.68rem;
   font-weight: 700;
 }
 
@@ -3892,8 +3848,8 @@ li:nth-child(3) .rank-num { color: #b45309; }
 
 .guide-actions small {
   margin: 0 0 0 auto;
-  color: #94a3b8;
-  font-size: 0.68rem;
+  color: #dc2626;
+  font-size: 0.56rem;
   font-weight: 500;
   text-align: right;
 }
@@ -4362,7 +4318,7 @@ li:nth-child(3) .rank-num { color: #b45309; }
   .skill-panel,
   .notebook-panel,
   .guide-panel {
-    padding: 3px 4px;
+    padding: 3px 3.2px;
   }
 
   .leader-panel .section-title svg {
@@ -4429,8 +4385,8 @@ li:nth-child(3) .rank-num { color: #b45309; }
   .guide-actions button,
   .save-row button {
     min-height: 0;
-    padding: 1px 9px;
-    font-size: 0.82rem;
+    padding: 3px 3.2px;
+    font-size: 0.68rem;
   }
 
   .tool-row button {
@@ -4552,7 +4508,19 @@ li:nth-child(3) .rank-num { color: #b45309; }
 
   .admin-sidebar button {
     flex: 1;
+    min-width: 0;
+    container-type: inline-size;
     justify-content: center;
+    gap: 3px;
+    padding: 0 4px;
+    font-size: clamp(10px, 18cqw, 16px);
+    white-space: nowrap;
+  }
+
+  .admin-sidebar button svg {
+    flex: 0 0 auto;
+    width: 1em;
+    height: 1em;
   }
 
   .admin-dashboard-head,
@@ -4570,6 +4538,75 @@ li:nth-child(3) .rank-num { color: #b45309; }
   .admin-dashboard-actions button,
   .admin-dashboard-actions a {
     width: 100%;
+  }
+
+  .admin-dashboard-head:has(.learning-report-actions),
+  .admin-dashboard-head:has(.problem-admin-actions) {
+    align-items: center;
+    flex-direction: row;
+    gap: 6px;
+  }
+
+  .admin-dashboard-head:has(.learning-report-actions) .section-title,
+  .admin-dashboard-head:has(.problem-admin-actions) .section-title {
+    flex: 0 0 auto;
+    min-width: 0;
+  }
+
+  .learning-report-actions {
+    width: auto;
+    flex: 1 1 auto;
+    min-width: 0;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 5px;
+  }
+
+  .learning-report-actions select,
+  .learning-report-actions button {
+    width: auto;
+    min-width: 0;
+  }
+
+  .learning-report-actions select {
+    flex: 0 1 50%;
+    max-width: 50%;
+  }
+
+  .learning-report-actions button {
+    flex: 0 0 auto;
+    padding: 0 8px;
+    white-space: nowrap;
+  }
+
+  .learning-report-actions a {
+    display: none;
+  }
+
+  .problem-admin-actions {
+    width: auto;
+    flex: 1 1 auto;
+    min-width: 0;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 5px;
+  }
+
+  .problem-admin-actions select,
+  .problem-admin-actions .admin-search-box {
+    width: auto;
+    min-width: 0;
+  }
+
+  .problem-admin-actions select {
+    flex: 0 1 38%;
+    max-width: 38%;
+  }
+
+  .problem-admin-actions .admin-search-box {
+    flex: 1 1 0;
   }
 
   .admin-summary-grid {
@@ -5274,7 +5311,7 @@ li:nth-child(3) .rank-num { color: #b45309; }
   .guide-actions {
     width: 100%;
     max-width: none;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .problem-header,
@@ -6093,7 +6130,7 @@ li:nth-child(3) .rank-num { color: #b45309; }
     min-width: 0;
     min-height: 70px;
     padding: 6px 7px;
-    font-size: 12px;
+    font-size: 9.33px;
     line-height: 1.35;
     text-align: left;
   }
@@ -6464,15 +6501,9 @@ button.stat-pill:hover,
   color: #f8fafc;
 }
 
-.concept-inline {
-  border-color: rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.06);
-}
-
 .tool-row button.active,
 .save-row button.primary,
 .guide-actions button:not(:disabled):hover,
-.concept-inline-toggle.active,
 .login-guide-start,
 .onboarding-submit {
   border-color: var(--brand-strong);
@@ -6976,5 +7007,233 @@ button.stat-pill:hover,
   cursor: pointer;
 }
 
-.onboarding-next:hover { background: #7dd3fc; }
+  .onboarding-next:hover { background: #7dd3fc; }
+
+/* Keep the problem header spacing controlled by one padding value. */
+.notebook-panel,
+.skill-panel,
+.guide-panel {
+  padding: 10px;
+}
+
+.problem-header {
+  padding: 0;
+  margin-bottom: 0;
+}
+
+.skill-panel > .section-title,
+.guide-panel > .section-title {
+  padding: 0;
+  margin-bottom: 0;
+}
+
+.skill-panel > .section-title {
+  margin-bottom: 8px;
+}
+
+.skill-panel.mobile-collapsed > .section-title,
+.skill-panel.pc-collapsed > .section-title {
+  margin-bottom: 0;
+}
+
+@media (max-width: 720px) {
+  .notebook-panel,
+  .skill-panel,
+  .guide-panel {
+    padding: 10px;
+  }
+
+  .problem-header {
+    padding: 0;
+    margin-bottom: 0;
+  }
+
+  .skill-panel > .section-title,
+  .guide-panel > .section-title {
+    padding: 0;
+    margin-bottom: 0;
+  }
+
+  .skill-panel > .section-title {
+    margin-bottom: 8px;
+  }
+
+  .skill-panel.mobile-collapsed > .section-title,
+  .skill-panel.pc-collapsed > .section-title {
+    margin-bottom: 0;
+  }
+}
+
+@media (max-width: 1180px) {
+  .admin-summary-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .admin-stat-card {
+    min-height: 54px;
+    gap: 4px;
+    padding: 8px 15px;
+  }
+
+  .admin-stat-card span {
+    font-size: 14px;
+    white-space: nowrap;
+  }
+
+  .admin-stat-card strong {
+    font-size: 14px;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 720px) {
+  .admin-summary-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 5px;
+  }
+
+  .admin-stat-card {
+    min-height: 48px;
+    padding: 7px 15px;
+  }
+
+  .admin-stat-card span {
+    font-size: 14px;
+  }
+
+  .admin-stat-card strong {
+    font-size: 14px;
+  }
+
+  .member-table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--line-soft);
+    background: #fff;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .member-table {
+    min-width: 760px;
+    border-collapse: collapse;
+    border-spacing: 0;
+    table-layout: fixed;
+    font-size: 10px;
+  }
+
+  .member-table thead {
+    display: table-header-group;
+  }
+
+  .member-table tbody {
+    display: table-row-group;
+  }
+
+  .member-table tr {
+    display: table-row;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: #fff;
+  }
+
+  .member-table th,
+  .member-table td {
+    display: table-cell;
+    width: auto !important;
+    padding: 5px 6px;
+    border-bottom: 1px solid var(--line-soft);
+    vertical-align: middle;
+    text-align: center;
+  }
+
+  .member-table td::before,
+  .member-table td:first-child::before {
+    display: none;
+  }
+
+  .member-table td:first-child {
+    padding-bottom: 5px;
+    margin-bottom: 0;
+    border-bottom: 1px solid var(--line-soft);
+  }
+
+  .member-table input,
+  .member-table select {
+    height: 28px;
+    padding: 0 6px;
+    font-size: 10px;
+    text-align: center;
+    text-align-last: center;
+  }
+
+  .member-table strong,
+  .member-table small,
+  .member-table .muted {
+    display: block;
+    text-align: center;
+  }
+
+  .member-reset-button {
+    min-height: 28px;
+    padding: 3px 6px;
+    font-size: 10px;
+  }
+
+  .member-child-list {
+    grid-template-columns: 1fr;
+  }
+
+  .audit-log-panel {
+    padding: 6px;
+  }
+
+  .audit-log-panel .activity-table-wrap {
+    overflow-x: hidden;
+  }
+
+  .audit-log-panel .admin-activity-table {
+    width: 100%;
+    min-width: 0;
+    table-layout: fixed;
+  }
+
+  .audit-log-panel .admin-activity-table th,
+  .audit-log-panel .admin-activity-table td {
+    height: 24px;
+    padding: 2px 2px;
+    font-size: 0.48rem;
+    line-height: 1.05;
+    white-space: nowrap;
+  }
+
+  .audit-log-panel .admin-activity-table .col-date {
+    width: 16%;
+  }
+
+  .audit-log-panel .admin-activity-table .col-child {
+    width: 14%;
+  }
+
+  .audit-log-panel .admin-activity-table .col-category {
+    width: 14%;
+  }
+
+  .audit-log-panel .admin-activity-table .col-problem {
+    width: 24%;
+    min-width: 0;
+  }
+
+  .audit-log-panel .admin-activity-table .col-answer {
+    width: 9%;
+  }
+
+  .audit-log-panel .admin-activity-table .col-status {
+    width: 11%;
+  }
+
+  .audit-log-panel .admin-activity-table .col-help {
+    width: 12%;
+  }
+}
 .onboarding-prev:hover { background: rgba(71,85,105,0.3); }
