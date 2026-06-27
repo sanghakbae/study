@@ -459,6 +459,7 @@ export default function App() {
   // 스킬별 푼 문제 집합을 ref로도 들고 있어, 문제 로드 effect가 매 풀이마다 재실행되지 않으면서 최신 진행도를 참조한다.
   const solvedBySkillRef = useRef(solvedBySkill);
   const studyLocationTimerRef = useRef(null);
+  const lastProblemLoadKeyRef = useRef("");
   const deployVersionRef = useRef("");
   const auditLoginRef = useRef("");
   const parentViewAuditRef = useRef("");
@@ -613,11 +614,15 @@ export default function App() {
       const sourceProblems = items.length >= expectedCount ? items : getFallbackProblems(skill);
       const nextProblems = sortProblemsByNumber(sourceProblems).slice(0, expectedCount);
       const savedLocation = { skillId: profile.lastSkillId, problemId: profile.lastProblemId };
-      const solvedIds = solvedBySkillRef.current[selectedSkillId] || [];
+      const solvedIds = solvedBySkill[selectedSkillId] || [];
       const nextProblemId = chooseProblemId({ problems: nextProblems, savedLocation, skillId: selectedSkillId, solvedIds });
       setProblems(nextProblems);
       setSelectedProblemId(nextProblemId);
     };
+    const solvedKey = (solvedBySkill[selectedSkillId] || []).join(",");
+    const loadKey = `${selectedSkillId}|${profile.role}|${profile.lastSkillId}|${profile.lastProblemId}|${solvedKey}|${skills.length}`;
+    if (lastProblemLoadKeyRef.current === loadKey) return;
+    lastProblemLoadKeyRef.current = loadKey;
     if (profile.role !== "admin") {
       applyProblems(getFallbackProblems(skill));
       return;
@@ -631,10 +636,11 @@ export default function App() {
         applyProblems(getFallbackProblems(skill));
         setDataWarning("");
       });
-  }, [selectedSkillId, user, profile.role, profile.lastSkillId, profile.lastProblemId, skills]);
+  }, [selectedSkillId, user, profile.role, profile.lastSkillId, profile.lastProblemId, skills, solvedBySkill]);
 
   useEffect(() => {
     if (!authReady || !user || !selectedSkillId || !selectedProblemId) return;
+    if ((solvedBySkill[selectedSkillId] || []).includes(selectedProblemId)) return;
     window.clearTimeout(studyLocationTimerRef.current);
     studyLocationTimerRef.current = window.setTimeout(() => {
       updateStudyLocation({ uid: user.uid, skillId: selectedSkillId, problemId: selectedProblemId }).catch((error) => {
@@ -642,7 +648,7 @@ export default function App() {
       });
     }, 2000);
     return () => window.clearTimeout(studyLocationTimerRef.current);
-  }, [authReady, selectedSkillId, selectedProblemId, user]);
+  }, [authReady, selectedSkillId, selectedProblemId, user, solvedBySkill]);
 
   useEffect(() => {
     if (!authReady || !user || profile.role !== "parents") return;
