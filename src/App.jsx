@@ -1,4 +1,5 @@
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import {
   Award,
   BookOpen,
@@ -34,7 +35,7 @@ import {
   Users,
   Wand2,
 } from "lucide-react";
-import { onAuthStateChanged, signInWithPopup, signOut } from "firebase/auth";
+import { onAuthStateChanged, signInWithPopup, signInWithRedirect, getRedirectResult, signOut } from "firebase/auth";
 import { auth, googleProvider } from "./firebase";
 import {
   completeOnboarding,
@@ -189,6 +190,110 @@ function DeployRefreshOverlay() {
   );
 }
 
+const ONBOARDING_KEY = "onboarding_done_v1";
+
+const GUIDE_STEPS = [
+  {
+    selector: ".skill-panel",
+    title: "스킬 트리",
+    desc: "단원을 선택하면 해당 단원 문제가 나타납니다",
+    side: "bottom",
+  },
+  {
+    selector: ".problem-card",
+    title: "문제 카드",
+    desc: "문제를 확인하고 아래 필기 공간에 풀이를 적으세요",
+    side: "bottom",
+  },
+  {
+    selector: ".canvas-with-choices",
+    title: "필기 & 정답",
+    desc: "손으로 풀이를 쓰고 오른쪽에서 정답을 선택하세요",
+    side: "top",
+  },
+  {
+    selector: ".guide-panel",
+    title: "AI 가이드",
+    desc: "막힐 때 AI가 힌트와 풀이 방향을 알려드립니다",
+    side: "left",
+  },
+];
+
+function OnboardingGuide({ onDone }) {
+  const [step, setStep] = useState(0);
+  const [rect, setRect] = useState(null);
+
+  const updateRect = useCallback(() => {
+    const el = document.querySelector(GUIDE_STEPS[step].selector);
+    if (el) setRect(el.getBoundingClientRect());
+  }, [step]);
+
+  useEffect(() => {
+    updateRect();
+    window.addEventListener("resize", updateRect);
+    return () => window.removeEventListener("resize", updateRect);
+  }, [updateRect]);
+
+  const current = GUIDE_STEPS[step];
+  const isLast = step === GUIDE_STEPS.length - 1;
+  const PAD = 6;
+
+  const calloutStyle = (() => {
+    if (!rect) return {};
+    const GAP = 16;
+    switch (current.side) {
+      case "bottom":
+        return { left: Math.max(8, rect.left), top: rect.bottom + PAD + GAP, maxWidth: Math.min(280, window.innerWidth - 16) };
+      case "top":
+        return { left: Math.max(8, rect.left), bottom: window.innerHeight - rect.top + PAD + GAP, maxWidth: Math.min(280, window.innerWidth - 16) };
+      case "left":
+        return { right: window.innerWidth - rect.left + GAP, top: rect.top, maxWidth: 240 };
+      case "right":
+        return { left: rect.right + GAP, top: rect.top, maxWidth: 240 };
+      default:
+        return {};
+    }
+  })();
+
+  if (!rect) return null;
+
+  return createPortal(
+    <div className="onboarding-overlay">
+      <div
+        className="onboarding-spotlight"
+        style={{
+          left: rect.left - PAD,
+          top: rect.top - PAD,
+          width: rect.width + PAD * 2,
+          height: rect.height + PAD * 2,
+        }}
+      />
+      <div className={`onboarding-callout side-${current.side}`} style={calloutStyle}>
+        <p className="onboarding-title">{current.title}</p>
+        <p className="onboarding-desc">{current.desc}</p>
+        <div className="onboarding-nav">
+          <span className="onboarding-dots">
+            {GUIDE_STEPS.map((_, i) => (
+              <span key={i} className={`onboarding-dot ${i === step ? "active" : ""}`} />
+            ))}
+          </span>
+          <div className="onboarding-btns">
+            {step > 0 && (
+              <button className="onboarding-prev" onClick={() => setStep((s) => s - 1)}>이전</button>
+            )}
+            {isLast ? (
+              <button className="onboarding-next" onClick={onDone}>완료</button>
+            ) : (
+              <button className="onboarding-next" onClick={() => setStep((s) => s + 1)}>다음</button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 export default function App() {
   const normalizedPath = window.location.pathname.replace(/\/+$/, "") || "/";
   const isManagerPath = normalizedPath === "/manager" || normalizedPath === "/admin";
@@ -207,6 +312,7 @@ export default function App() {
   const [activityAttempts, setActivityAttempts] = useState([]);
   const [aiUsageLogs, setAiUsageLogs] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
+  const [showOnboarding, setShowOnboarding] = useState(false);
   const [guide, setGuide] = useState("문제를 고르고 노트에 풀이를 시작하세요. 막히는 순간 오른쪽 버튼으로 힌트를 받을 수 있습니다.");
   const [guideLoading, setGuideLoading] = useState(false);
   const [pendingRole, setPendingRole] = useState(null);
@@ -221,6 +327,7 @@ export default function App() {
   const [dataWarning, setDataWarning] = useState("");
   const [noteRatio, setNoteRatio] = useState(68);
   const [mobileSkillOpen, setMobileSkillOpen] = useState(true);
+  const [pcSkillOpen, setPcSkillOpen] = useState(true);
   const [showLoginGuide, setShowLoginGuide] = useState(false);
   const [guideSuppressChecked, setGuideSuppressChecked] = useState(false);
   const [deployRefreshing, setDeployRefreshing] = useState(false);
@@ -292,6 +399,12 @@ export default function App() {
 
   useEffect(() => {
     localStorage.removeItem("study-note-ratio");
+    // iOS PWA redirect 후 pendingRole 복원
+    const savedRole = sessionStorage.getItem("pendingRole");
+    if (savedRole) {
+      setPendingRole(savedRole);
+      sessionStorage.removeItem("pendingRole");
+    }
     return onAuthStateChanged(auth, async (nextUser) => {
       setAuthReady(false);
       setUser(nextUser);
@@ -326,6 +439,9 @@ export default function App() {
           }
           setSelectedSkillId(nextProfile.lastSkillId || defaultSkillId);
           setSelectedProblemId(nextProfile.lastProblemId || defaultProblemId);
+          if (!localStorage.getItem(ONBOARDING_KEY)) {
+            setTimeout(() => setShowOnboarding(true), 800);
+          }
           if (nextUser.email === "totoriverce@gmail.com") {
             await seedCatalogIfNeeded();
           }
@@ -488,10 +604,27 @@ export default function App() {
     });
   }, [profile.role, profile.parentOf, user]);
 
+  const isIosPwa = () =>
+    typeof window !== "undefined" &&
+    window.navigator.standalone === true &&
+    /iphone|ipad|ipod/i.test(navigator.userAgent);
+
+  // iOS PWA에서 redirect 후 돌아왔을 때 결과 처리
+  useEffect(() => {
+    if (!isIosPwa()) return;
+    getRedirectResult(auth).catch(() => {});
+  }, []);
+
   async function handleLogin(role) {
     setPendingRole(role);
     try {
-      await signInWithPopup(auth, googleProvider);
+      if (isIosPwa()) {
+        // iOS PWA: 팝업 대신 redirect 사용 (sessionStorage 문제 우회)
+        sessionStorage.setItem("pendingRole", role);
+        await signInWithRedirect(auth, googleProvider);
+      } else {
+        await signInWithPopup(auth, googleProvider);
+      }
     } catch (error) {
       setPendingRole(null);
       if (error.code === "auth/popup-blocked") {
@@ -969,6 +1102,12 @@ export default function App() {
 
   return (
     <main className="app-shell">
+      {showOnboarding && (
+        <OnboardingGuide onDone={() => {
+          localStorage.setItem(ONBOARDING_KEY, "1");
+          setShowOnboarding(false);
+        }} />
+      )}
       {deployRefreshing && <DeployRefreshOverlay />}
       {dataWarning && <div className="warning-bar">{dataWarning}</div>}
       <Topbar
@@ -1053,6 +1192,8 @@ export default function App() {
           onSelect={setSelectedSkillId}
           mobileCollapsed={!mobileSkillOpen}
           onMobileToggle={() => setMobileSkillOpen((open) => !open)}
+          pcCollapsed={!pcSkillOpen}
+          onPcToggle={() => setPcSkillOpen((open) => !open)}
         />
       </section>
 
@@ -1061,7 +1202,7 @@ export default function App() {
       <section
         className="workspace"
         ref={workspaceRef}
-        style={{ gridTemplateColumns: `minmax(0, ${noteRatio}%) 6px minmax(0, 1fr)` }}
+        style={{ gridTemplateColumns: `minmax(0, ${noteRatio}%) 8px minmax(0, 1fr)` }}
       >
         <NotebookPanel
           ref={notebookRef}
@@ -1569,12 +1710,14 @@ function Topbar({ user, profile, rank = 0, wrongCount = 0, onWrongNotebookClick,
           <button type="button" className="stat-pill wrong-pill" onClick={onWrongNotebookClick} aria-label="오답노트 열기">
             <ClipboardList size={16} />
             <span>{wrongCount}</span>
+            <span className="topbar-menu-label">오답노트</span>
           </button>
         )}
         {(profile.role || "student") === "student" && (
           <button type="button" className="stat-pill rank-pill" onClick={onRankClick} aria-label="랭킹 열기">
             <Crown size={16} />
             <span>{rank > 0 ? `#${rank}` : "-"}</span>
+            <span className="topbar-menu-label">랭킹</span>
           </button>
         )}
         {(profile.role || "student") === "student" && (
@@ -1585,7 +1728,7 @@ function Topbar({ user, profile, rank = 0, wrongCount = 0, onWrongNotebookClick,
         )}
         <div className="user-pill">
           {user.photoURL ? <img src={user.photoURL} alt="" /> : <UserRound size={18} />}
-          <span>{user.displayName || "러너"}</span>
+          <span>{maskName(user.displayName) || "러너"}</span>
         </div>
         <button className="icon-button" onClick={onLogout || (() => signOut(auth))} aria-label="로그아웃">
           <LogOut size={18} />
@@ -1930,7 +2073,7 @@ const skillIcons = {
   "h-statistics": "μ",
 };
 
-function SkillTree({ skills, selectedSkillId, completedSkills, solvedBySkill, unlockedSkills, onSelect, mobileCollapsed = false, onMobileToggle }) {
+function SkillTree({ skills, selectedSkillId, completedSkills, solvedBySkill, unlockedSkills, onSelect, mobileCollapsed = false, onMobileToggle, pcCollapsed = false, onPcToggle }) {
   const boardRef = useRef(null);
   const stageOrder = ["중1", "중2", "중3", "고1", "고2", "고3"];
   const groupedSkills = stageOrder.map((stage) => ({
@@ -1971,12 +2114,15 @@ function SkillTree({ skills, selectedSkillId, completedSkills, solvedBySkill, un
   }, [maxStageSkillCount]);
 
   return (
-    <section className={`skill-panel ${mobileCollapsed ? "mobile-collapsed" : ""}`}>
+    <section className={`skill-panel ${mobileCollapsed ? "mobile-collapsed" : ""} ${pcCollapsed ? "pc-collapsed" : ""}`}>
       <div className="section-title">
         <div className="section-title-label">
           <Award size={18} />
           <h2>스킬 트리</h2>
         </div>
+        <button className="pc-skill-toggle" type="button" onClick={onPcToggle}>
+          {pcCollapsed ? "펼치기" : "접기"}
+        </button>
         <button className="mobile-skill-toggle" type="button" onClick={onMobileToggle}>
           {mobileCollapsed ? "펼치기" : "접기"}
         </button>
@@ -2094,7 +2240,7 @@ function buildActualLeaderboard(leaders, currentUid, profile) {
 }
 
 function formatStudentName(member) {
-  const name = member?.displayName || "러너";
+  const name = maskName(member?.displayName) || "러너";
   return member?.grade ? `${name} (${member.grade})` : name;
 }
 
@@ -4219,16 +4365,16 @@ const NotebookPanel = forwardRef(function NotebookPanel(
         </button>
       </div>
 
-      <div className={`canvas-wrap ${showGrid ? "show-grid" : ""}`}>
-        <div className="eraser-cursor" ref={cursorRef} />
-        <canvas
-          ref={canvasRef}
-        />
-      </div>
+      <div className="canvas-with-choices">
+        <div className={`canvas-wrap ${showGrid ? "show-grid" : ""}`}>
+          <div className="eraser-cursor" ref={cursorRef} />
+          <canvas
+            ref={canvasRef}
+          />
+        </div>
 
-      <div className={`answer-section ${answerCheck?.status || ""} ${shaking ? "shaking" : ""}`}>
-        {selectedProblem?.choices?.length > 0 ? (
-          <div className="mc-choices">
+        {selectedProblem?.choices?.length > 0 && (
+          <div className={`mc-choices ${answerCheck?.status || ""} ${shaking ? "shaking" : ""}`}>
             {selectedProblem.choices.map((choice, idx) => {
               const isSelected = answerInput === choice;
               const isCorrect = answerCheck?.status === "correct" && isSelected;
@@ -4251,8 +4397,14 @@ const NotebookPanel = forwardRef(function NotebookPanel(
                 </button>
               );
             })}
+            {answerCheck?.status === "correct" && <small className="answer-msg correct">✓ 정답입니다!</small>}
+            {answerCheck?.status === "wrong" && <small className="answer-msg wrong">✗ 오답입니다. 풀이 점검을 활용하세요.</small>}
           </div>
-        ) : (
+        )}
+      </div>
+
+      <div className={`answer-section ${answerCheck?.status || ""} ${shaking ? "shaking" : ""}`}>
+        {!(selectedProblem?.choices?.length > 0) && (
           <div className="answer-input-row">
             <input
               value={answerInput}
@@ -4275,8 +4427,8 @@ const NotebookPanel = forwardRef(function NotebookPanel(
             </button>
           </div>
         )}
-        {answerCheck?.status === "correct" && <small className="answer-msg correct">✓ 정답입니다!</small>}
-        {answerCheck?.status === "wrong" && <small className="answer-msg wrong">✗ 오답입니다. 풀이 점검을 활용하세요.</small>}
+        {!(selectedProblem?.choices?.length > 0) && answerCheck?.status === "correct" && <small className="answer-msg correct">✓ 정답입니다!</small>}
+        {!(selectedProblem?.choices?.length > 0) && answerCheck?.status === "wrong" && <small className="answer-msg wrong">✗ 오답입니다. 풀이 점검을 활용하세요.</small>}
         <div className="save-row">
           <button onClick={() => onSave(false)} disabled={saving}>
             <Save size={17} />
