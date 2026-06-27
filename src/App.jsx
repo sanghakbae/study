@@ -839,6 +839,19 @@ export default function App() {
         submittedAnswer,
         helpUsed,
       });
+      saveAuditLog({
+        user,
+        action: completed ? "problem_completed" : "problem_saved",
+        category: "learning",
+        message: problem.title || problem.prompt || problem.id || "문제",
+        metadata: {
+          role: profile.role || "student",
+          nodeId: problem.nodeId || "",
+          problemId: problem.id || "",
+          helpUsed,
+          alreadySolved,
+        },
+      }).catch(() => {});
       if (completed) {
         markProblemCompleted(problem.id, problem.nodeId);
         advanceToNextProblem(problem.id);
@@ -886,6 +899,7 @@ export default function App() {
 
     setGuide("정답이 아닙니다. 내 풀이 점검을 눌러 어디서 어긋났는지 확인하세요.");
     try {
+      const helpUsedWrong = Array.isArray(hintUsed[selectedProblem.id]) ? hintUsed[selectedProblem.id] : [];
       await saveAttempt({
         user,
         problem: selectedProblem,
@@ -894,8 +908,21 @@ export default function App() {
         isCorrect: false,
         status: "wrong",
         submittedAnswer: inputAnswer,
-        helpUsed: Array.isArray(hintUsed[selectedProblem.id]) ? hintUsed[selectedProblem.id] : [],
+        helpUsed: helpUsedWrong,
       });
+      saveAuditLog({
+        user,
+        action: "problem_wrong",
+        category: "learning",
+        message: selectedProblem.title || selectedProblem.prompt || selectedProblem.id || "문제",
+        metadata: {
+          role: profile.role || "student",
+          nodeId: selectedProblem.nodeId || "",
+          problemId: selectedProblem.id || "",
+          submittedAnswer: inputAnswer,
+          helpUsed: helpUsedWrong,
+        },
+      }).catch(() => {});
       await refreshMembers();
     } catch (error) {
       console.error(error);
@@ -930,6 +957,13 @@ export default function App() {
     try {
       const result = await saveExamResult({ user, key, score, total, passed, bonusXp: possibleBonus });
       const bonus = result?.awardedBonus ? possibleBonus : 0;
+      saveAuditLog({
+        user,
+        action: "exam_submitted",
+        category: "exam",
+        message: title,
+        metadata: { role: profile.role || "student", key, score, total, correct: correctCount, passed },
+      }).catch(() => {});
       setExamResultModal({ key, title, correct: correctCount, total, score, passed, bonus });
       setProfile((current) => {
         const previous = current.examResults?.[key];
@@ -1531,7 +1565,7 @@ function AdminPage({ user, profile, members, attempts, auditLogs, aiUsageLogs, o
             <MemberManager members={members} onRoleUpdate={onRoleUpdate} />
           </section>
         ) : activeMenu === "audit" ? (
-          <AdminAuditLog members={members} attempts={attempts} auditLogs={auditLogs} />
+          <AdminAuditLog members={members} auditLogs={auditLogs} />
         ) : activeMenu === "ai" ? (
           <AdminAiUsage members={members} usageLogs={aiUsageLogs} />
         ) : activeMenu === "problems" ? (
@@ -1550,7 +1584,7 @@ function AdminPage({ user, profile, members, attempts, auditLogs, aiUsageLogs, o
 
 function ParentPage({ user, profile, members, attempts, leaders, onRegisterChild, onLogout }) {
   const [reportModalOpen, setReportModalOpen] = useState(false);
-  const [monthlyReportChecked, setMonthlyReportChecked] = useState(false);
+  const [weeklyReportChecked, setWeeklyReportChecked] = useState(false);
   const childIds = new Set(profile?.parentOf || []);
   const students = members.filter((member) => member.role === "student");
   const children = members.filter((member) => member.role === "student" && childIds.has(member.uid));
@@ -1558,12 +1592,14 @@ function ParentPage({ user, profile, members, attempts, leaders, onRegisterChild
   const primaryChild = children[0] || null;
 
   useEffect(() => {
-    if (monthlyReportChecked || !children.length) return;
-    setMonthlyReportChecked(true);
-    if (isMonthEnd(new Date())) {
+    if (weeklyReportChecked || !children.length) return;
+    setWeeklyReportChecked(true);
+    const weekKey = getISOWeekKey();
+    if (localStorage.getItem("weekly_report_shown") !== weekKey) {
+      localStorage.setItem("weekly_report_shown", weekKey);
       setReportModalOpen(true);
     }
-  }, [monthlyReportChecked, children.length]);
+  }, [weeklyReportChecked, children.length]);
 
   return (
     <main className="app-shell parent-shell">
@@ -1610,12 +1646,16 @@ function ParentReportModal({ children, attempts, allStudents, onClose, onPrint }
       <div className="parent-report-modal">
         <div className="parent-report-modal-head">
           <div>
-            <h2 id="parent-report-title">월간 자녀 학습 리포트</h2>
-            <p>{period.label} · {children.length}명의 자녀 리포트를 확인하고 PDF로 저장합니다.</p>
+            <h2 id="parent-report-title">주간 자녀 학습 리포트</h2>
+            <p>{period.label} · {children.length}명의 자녀 현황을 확인하고 PDF로 저장합니다.</p>
           </div>
-          <button type="button" className="icon-button light" onClick={onClose} aria-label="닫기">
-            ×
-          </button>
+          <div className="parent-report-modal-head-actions">
+            <button type="button" className="prm-btn-save" onClick={onPrint}>
+              <Printer size={13} />
+              PDF 저장
+            </button>
+            <button type="button" className="prm-btn-close" onClick={onClose}>닫기</button>
+          </div>
         </div>
         <div className="parent-report-modal-list">
           {children.map((child) => {
@@ -1667,16 +1707,18 @@ function ParentReportModal({ children, attempts, allStudents, onClose, onPrint }
             );
           })}
         </div>
-        <div className="parent-report-modal-actions">
-          <button type="button" onClick={onClose}>닫기</button>
-          <button type="button" className="primary" onClick={onPrint}>
-            <Printer size={14} />
-            PDF 저장
-          </button>
-        </div>
       </div>
     </div>
   );
+}
+
+function getISOWeekKey() {
+  const d = new Date();
+  const day = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - day);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+  return `${d.getUTCFullYear()}-W${weekNo}`;
 }
 
 function isMonthEnd(date) {
@@ -2258,12 +2300,21 @@ function formatAdminMemberName(member, members) {
   return `${role}(${name})`;
 }
 
+function maskEmail(email) {
+  if (!email) return "이메일 없음";
+  const [local, domain] = email.split("@");
+  if (!domain) return email;
+  const visible = local.length <= 2 ? local[0] : local.slice(0, 2);
+  const masked = visible + "*".repeat(Math.max(local.length - 2, 1)) + "@" + domain;
+  return masked;
+}
+
 function maskName(name) {
   if (!name) return "러너";
   const chars = [...name];
   if (chars.length <= 1) return name;
   if (chars.length === 2) return chars[0] + "*";
-  return chars[0] + "*".repeat(chars.length - 2) + chars[chars.length - 1];
+  return chars[0] + "*" + chars[chars.length - 1];
 }
 
 function MemberManager({ members, onRoleUpdate }) {
@@ -2666,7 +2717,9 @@ function AdminLearningDashboard({ members, attempts }) {
           </button>
           <a
             className={!selectedStudent || !parentEmails.length ? "disabled" : ""}
-            href={selectedStudent && parentEmails.length ? `mailto:${parentEmails.join(",")}?subject=${encodeURIComponent(reportSubject)}&body=${encodeURIComponent(reportBody)}` : undefined}
+            href={selectedStudent && parentEmails.length ? `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(parentEmails.join(","))}&su=${encodeURIComponent(reportSubject)}&body=${encodeURIComponent(reportBody)}` : undefined}
+            target="_blank"
+            rel="noopener noreferrer"
             aria-disabled={!selectedStudent || !parentEmails.length}
           >
             <Mail size={14} />
@@ -2696,77 +2749,92 @@ function AdminLearningDashboard({ members, attempts }) {
 
 function LearningPrintReports({ students, attempts, allStudents }) {
   const rankedStudents = [...allStudents].sort((a, b) => (b.xp || 0) - (a.xp || 0));
-  const avgXp = allStudents.length ? Math.round(allStudents.reduce((sum, student) => sum + (Number(student.xp) || 0), 0) / allStudents.length) : 0;
-  const avgSolved = allStudents.length ? Math.round(allStudents.reduce((sum, student) => sum + (Number(student.solvedCount) || 0), 0) / allStudents.length) : 0;
+  const maxXp = rankedStudents.length ? (Number(rankedStudents[0]?.xp) || 0) : 0;
+  const avgXp = allStudents.length ? Math.round(allStudents.reduce((sum, s) => sum + (Number(s.xp) || 0), 0) / allStudents.length) : 0;
+  const avgSolved = allStudents.length ? Math.round(allStudents.reduce((sum, s) => sum + (Number(s.solvedCount) || 0), 0) / allStudents.length) : 0;
+  const dateLabel = new Intl.DateTimeFormat("ko-KR", { dateStyle: "medium" }).format(new Date());
+  const DAY_KO = ["일", "월", "화", "수", "목", "금", "토"];
 
-  return (
+  return createPortal(
     <div className="print-report-root" aria-hidden="true">
       {students.map((student) => {
-        const studentAttempts = attempts.filter((attempt) => attempt.uid === student.uid);
-        const completedAttempts = studentAttempts.filter((attempt) => attempt.completed);
-        const wrongAttempts = studentAttempts.filter((attempt) => attempt.status === "wrong" || attempt.wrong);
-        const dashboard = buildChildDashboard({
-          child: student,
-          attempts: studentAttempts,
-          students: allStudents,
-          rankIndex: rankedStudents.findIndex((item) => item.uid === student.uid),
-          avgXp,
-          avgSolved,
+        const studentAttempts = attempts.filter((a) => a.uid === student.uid);
+        const completedAttempts = studentAttempts.filter((a) => a.completed);
+        const wrongAttempts = studentAttempts.filter((a) => a.status === "wrong" || a.wrong);
+        const totalAnswered = completedAttempts.length + wrongAttempts.length;
+        const accuracyPct = totalAnswered ? Math.round((completedAttempts.length / totalAnswered) * 100) : 0;
+        const accuracy = totalAnswered ? `${accuracyPct}%` : "-";
+        const rankIndex = rankedStudents.findIndex((s) => s.uid === student.uid);
+        const studentXp = Number(student.xp) || 0;
+        const dashboard = buildChildDashboard({ child: student, attempts: studentAttempts, students: allStudents, rankIndex, avgXp, avgSolved });
+        const recentRows = studentAttempts.slice(0, 6);
+
+        const now = new Date();
+        const weekDays = Array.from({ length: 7 }, (_, i) => {
+          const d = new Date(now);
+          d.setDate(now.getDate() - (6 - i));
+          return {
+            label: DAY_KO[d.getDay()],
+            active: studentAttempts.some((a) => {
+              const at = a.timestamp?.toDate ? a.timestamp.toDate() : a.timestamp ? new Date(a.timestamp) : null;
+              return at && at.toDateString() === d.toDateString();
+            }),
+          };
         });
-        const recentRows = studentAttempts.slice(0, 8);
-        const accuracy = completedAttempts.length + wrongAttempts.length
-          ? `${Math.round((completedAttempts.length / (completedAttempts.length + wrongAttempts.length)) * 100)}%`
-          : "-";
 
         return (
           <article className="print-student-report" key={student.uid}>
             <header className="print-report-head">
-              <div>
-                <span>Study Math Arena</span>
+              <div className="print-head-brand">Study Math Arena</div>
+              <div className="print-head-center">
                 <h1>{student.displayName || student.email || "학생"} 학습 리포트</h1>
                 <p>{student.grade || "학년 미설정"} · {student.email || "이메일 없음"}</p>
               </div>
-              <strong>{new Intl.DateTimeFormat("ko-KR", { dateStyle: "medium" }).format(new Date())}</strong>
+              <div className="print-head-date">{dateLabel}</div>
             </header>
 
             <section className="print-metric-grid">
-              <PrintMetric label="XP" value={(Number(student.xp) || 0).toLocaleString()} />
-              <PrintMetric label="해결 문제" value={`${Number(student.solvedCount) || completedAttempts.length}개`} />
-              <PrintMetric label="정답률" value={accuracy} />
-              <PrintMetric label="전체 순위" value={dashboard.growth[2]?.value || "-"} />
+              <div className="print-metric pm-blue"><span>XP</span><strong>{studentXp.toLocaleString()}</strong><small>평균 {avgXp.toLocaleString()}</small></div>
+              <div className="print-metric pm-green"><span>해결 문제</span><strong>{Number(student.solvedCount) || completedAttempts.length}개</strong><small>평균 {avgSolved}개</small></div>
+              <div className="print-metric pm-orange"><span>정답률</span><strong>{accuracy}</strong></div>
+              <div className="print-metric pm-purple"><span>전체 순위</span><strong>{dashboard.growth[2]?.value || (rankIndex >= 0 ? `${rankIndex + 1}위` : "-")}</strong></div>
             </section>
 
-            <section className="print-report-section">
-              <h2>상단 요약</h2>
-              <div className="print-info-grid">
-                {dashboard.summary.map((item) => <PrintMetric key={item.label} label={item.label} value={item.value} />)}
+            <section className="print-charts-row">
+              <div className="print-chart-box">
+                <div className="print-chart-title">XP 비교</div>
+                <PrintXpChart studentXp={studentXp} avgXp={avgXp} maxXp={maxXp} />
+              </div>
+              <div className="print-chart-box">
+                <div className="print-chart-title">정답률</div>
+                <PrintAccuracyGauge pct={accuracyPct} />
+              </div>
+              <div className="print-chart-box">
+                <div className="print-chart-title">최근 7일 활동</div>
+                <PrintWeekDots days={weekDays} />
               </div>
             </section>
 
-            <section className="print-report-section">
-              <h2>위험 신호</h2>
-              <div className="print-info-grid">
-                {dashboard.risks.map((item) => <PrintMetric key={item.label} label={item.label} value={item.value} detail={item.detail} />)}
-              </div>
-            </section>
-
-            <section className="print-report-section">
-              <h2>비교/성장</h2>
-              <div className="print-info-grid">
-                {dashboard.growth.map((item) => <PrintMetric key={item.label} label={item.label} value={item.value} detail={item.detail} />)}
-              </div>
-            </section>
+            <div className="print-two-col">
+              <section className="print-report-section">
+                <h2>학습 요약</h2>
+                <div className="print-info-grid">
+                  {dashboard.summary.map((item) => <PrintMetric key={item.label} label={item.label} value={item.value} />)}
+                </div>
+              </section>
+              <section className="print-report-section print-risks-section">
+                <h2>위험 신호</h2>
+                <div className="print-info-grid">
+                  {dashboard.risks.map((item) => <PrintMetric key={item.label} label={item.label} value={item.value} detail={item.detail} />)}
+                </div>
+              </section>
+            </div>
 
             <section className="print-report-section print-activity-section">
               <h2>최근 활동</h2>
               <table>
                 <thead>
-                  <tr>
-                    <th>날짜</th>
-                    <th>단원</th>
-                    <th>문제</th>
-                    <th>상태</th>
-                  </tr>
+                  <tr><th>날짜</th><th>단원</th><th>문제</th><th>상태</th></tr>
                 </thead>
                 <tbody>
                   {recentRows.length ? recentRows.map((attempt) => {
@@ -2779,18 +2847,61 @@ function LearningPrintReports({ students, attempts, allStudents }) {
                         <td>{getAttemptResult(attempt)}</td>
                       </tr>
                     );
-                  }) : (
-                    <tr>
-                      <td colSpan="4">최근 활동 기록이 없습니다.</td>
-                    </tr>
-                  )}
+                  }) : <tr><td colSpan="4">최근 활동 기록이 없습니다.</td></tr>}
                 </tbody>
               </table>
             </section>
           </article>
         );
       })}
-    </div>
+    </div>,
+    document.body
+  );
+}
+
+function PrintXpChart({ studentXp, avgXp, maxXp }) {
+  const W = 160;
+  const max = Math.max(maxXp, studentXp, 1);
+  const sw = Math.round((studentXp / max) * W);
+  const aw = Math.round((avgXp / max) * W);
+  return (
+    <svg width={W + 60} height={46} style={{ display: "block", overflow: "visible" }}>
+      <text x={0} y={11} fontSize={8} fill="#475569" fontWeight="700">내 XP</text>
+      <rect x={36} y={1} width={Math.max(sw, 2)} height={13} fill="#3b82f6" rx={2} />
+      <text x={36 + Math.max(sw, 2) + 3} y={12} fontSize={8} fill="#1e40af" fontWeight="700">{studentXp.toLocaleString()}</text>
+      <text x={0} y={33} fontSize={8} fill="#94a3b8" fontWeight="700">평균</text>
+      <rect x={36} y={23} width={Math.max(aw, 2)} height={13} fill="#bfdbfe" rx={2} />
+      <text x={36 + Math.max(aw, 2) + 3} y={34} fontSize={8} fill="#64748b">{avgXp.toLocaleString()}</text>
+    </svg>
+  );
+}
+
+function PrintAccuracyGauge({ pct }) {
+  const r = 17;
+  const c = 2 * Math.PI * r;
+  const dash = (pct / 100) * c;
+  const color = pct >= 80 ? "#22c55e" : pct >= 50 ? "#f59e0b" : "#ef4444";
+  return (
+    <svg width={46} height={46} viewBox="0 0 46 46">
+      <circle cx={23} cy={23} r={r} fill="none" stroke="#e2e8f0" strokeWidth={5} />
+      <circle cx={23} cy={23} r={r} fill="none" stroke={color} strokeWidth={5}
+        strokeDasharray={`${dash} ${c}`} strokeDashoffset={c / 4} strokeLinecap="round" />
+      <text x={23} y={27} textAnchor="middle" fontSize={9} fontWeight="800" fill="#0f172a">{pct}%</text>
+    </svg>
+  );
+}
+
+function PrintWeekDots({ days }) {
+  return (
+    <svg width={140} height={46} style={{ display: "block" }}>
+      {days.map((day, i) => (
+        <g key={i} transform={`translate(${i * 20}, 0)`}>
+          <circle cx={8} cy={14} r={7} fill={day.active ? "#3b82f6" : "#e2e8f0"} />
+          {day.active && <text x={8} y={18} textAnchor="middle" fontSize={8} fill="#fff" fontWeight="800">✓</text>}
+          <text x={8} y={34} textAnchor="middle" fontSize={8} fill={day.active ? "#1e40af" : "#94a3b8"} fontWeight={day.active ? "700" : "400"}>{day.label}</text>
+        </g>
+      ))}
+    </svg>
   );
 }
 
@@ -2804,25 +2915,9 @@ function PrintMetric({ label, value, detail = "" }) {
   );
 }
 
-function AdminAuditLog({ members, attempts, auditLogs }) {
+function AdminAuditLog({ members, auditLogs }) {
   const [query, setQuery] = useState("");
-  const attemptRows = attempts.map((attempt) => {
-    const member = members.find((item) => item.uid === attempt.uid);
-    const problemText = getProblemText(attempt);
-    return {
-      id: `attempt-${attempt.id}`,
-      date: formatAttemptDate(attempt),
-      time: getAttemptTime(attempt),
-      student: member ? formatAdminMemberName(member, members) : "학생",
-      category: problemText.category,
-      problem: problemText.prompt || `${attempt.nodeId} · ${attempt.problemId}`,
-      answer: getSubmittedAnswer(attempt) || "-",
-      result: getAttemptResult(attempt),
-      resultClass: getAttemptResultClass(attempt),
-      help: formatHelpUsed(attempt),
-    };
-  });
-  const auditRows = (auditLogs || []).map((log) => {
+  const rows = (auditLogs || []).map((log) => {
     const member = members.find((item) => item.uid === log.uid);
     return {
       id: `audit-${log.id}`,
@@ -2831,13 +2926,12 @@ function AdminAuditLog({ members, attempts, auditLogs }) {
       student: member ? formatAdminMemberName(member, members) : log.displayName || log.email || log.uid || "사용자",
       category: getAuditCategoryLabel(log),
       problem: log.message || getAuditActionLabel(log.action),
-      answer: "-",
+      answer: log.metadata?.submittedAnswer || "-",
       result: getAuditActionLabel(log.action),
-      resultClass: log.category === "auth" ? "positive" : "",
+      resultClass: log.category === "auth" ? "positive" : log.action === "problem_wrong" ? "negative" : "",
       help: formatAuditMetadata(log),
     };
-  });
-  const rows = [...attemptRows, ...auditRows].sort((a, b) => (b.time || 0) - (a.time || 0));
+  }).sort((a, b) => (b.time || 0) - (a.time || 0));
   const normalizedQuery = query.trim().toLowerCase();
   const filteredRows = normalizedQuery
     ? rows.filter((row) => Object.values(row).join(" ").toLowerCase().includes(normalizedQuery))
@@ -3331,8 +3425,8 @@ function ParentInsightPanel({ profile, members, attempts, onRegisterChild, onRep
     .filter((student) => !childIds.has(student.uid))
     .filter((student) => {
       const queryText = childQuery.trim().toLowerCase();
-      if (!queryText) return false;
-      return `${student.displayName || ""} ${student.email || ""} ${student.grade || ""}`.toLowerCase().includes(queryText);
+      if (queryText.length < 2) return false;
+      return (student.email || "").toLowerCase().includes(queryText);
     })
     .slice(0, 6);
   const avgXp = students.length ? Math.round(students.reduce((sum, student) => sum + (student.xp || 0), 0) / students.length) : 0;
@@ -3361,7 +3455,7 @@ function ParentInsightPanel({ profile, members, attempts, onRegisterChild, onRep
             <input
               value={childQuery}
               onChange={(event) => setChildQuery(event.target.value)}
-              placeholder="자녀 이름 또는 이메일로 검색"
+              placeholder="자녀 이메일 2자 이상 입력"
             />
           </div>
           {candidates.length > 0 && (
@@ -3375,13 +3469,13 @@ function ParentInsightPanel({ profile, members, attempts, onRegisterChild, onRep
                   }}
                 >
                   <div className="candidate-avatar"><UserRound size={14} /></div>
-                  <span>{maskName(student.displayName)}</span>
+                  <span>{maskEmail(student.email)}</span>
                   {student.grade && <em>{student.grade}</em>}
                 </button>
               ))}
             </div>
           )}
-          {childQuery.trim() && !candidates.length && (
+          {childQuery.trim().length >= 2 && !candidates.length && (
             <p className="child-empty">일치하는 학생이 없습니다.</p>
           )}
         </div>
