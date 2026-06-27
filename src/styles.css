@@ -873,7 +873,7 @@ button:disabled {
   height: auto;
   vertical-align: top;
   white-space: normal;
-  font-size: 10px;
+  font-size: 7.33px;
 }
 
 .problem-admin-table .col-category {
@@ -917,7 +917,7 @@ button:disabled {
   background: #fff;
   color: #111827;
   padding: 2px 4px;
-  font-size: 10px;
+  font-size: 7.33px;
   font-weight: 750;
   line-height: 1.35;
 }
