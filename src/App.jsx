@@ -145,6 +145,17 @@ function getFreshProblemGuide(problem, field) {
   return generated?.[field] || problem?.[field] || "";
 }
 
+// /api/guide(서버 함수)를 쓸 수 없는 환경(정적 호스팅 등)에서 보여줄 내장 가이드.
+function getGuideFallback(actionKey, problem) {
+  if (actionKey === "next") return getFreshProblemGuide(problem, "nextStep");
+  if (actionKey === "hint") return getFreshProblemGuide(problem, "hint");
+  // AI 가이드(내 풀이 점검)는 정적 환경에서 채점이 불가하므로 개념 정리로 대신 안내한다.
+  const concept = getFreshProblemGuide(problem, "conceptGuide");
+  return concept
+    ? `## 내 풀이 점검\n- 지금 환경에서는 AI 풀이 점검을 사용할 수 없어, 개념 정리로 대신 안내합니다.\n\n${concept}`
+    : "";
+}
+
 function chooseProblemId({ problems, savedLocation, skillId, solvedIds = [] }) {
   const solved = new Set(solvedIds);
   const savedProblemId = savedLocation.skillId === skillId ? savedLocation.problemId : "";
@@ -776,8 +787,16 @@ export default function App() {
         });
       }
       setGuide(data.guide);
+      return true;
     } catch (error) {
-      setGuide(`가이드를 불러오지 못했습니다.\n\n오류: ${error.message}\n\n잠시 후 다시 시도해 주세요.`);
+      // 서버 함수를 쓸 수 없는 환경(정적 호스팅 등)에서는 내장 가이드로 자동 대체한다.
+      const fallback = getGuideFallback(action.key, selectedProblem);
+      if (fallback) {
+        setGuide(fallback);
+      } else {
+        setGuide(`가이드를 불러오지 못했습니다.\n\n오류: ${error.message}\n\n잠시 후 다시 시도해 주세요.`);
+      }
+      return false;
     } finally {
       setGuideLoading(false);
     }
@@ -811,12 +830,15 @@ export default function App() {
       return;
     }
 
-    setReviewCounts((current) => ({ ...current, [reviewKey]: 1 }));
-    markAiGuideUsed({ uid: user.uid, problemId: reviewKey }).catch((error) => {
-      console.error(error);
-      setDataWarning(`AI 가이드 사용 기록 저장 실패: ${error.message}`);
-    });
-    await runAiGuide(action);
+    // 실제 AI 응답을 받은 경우에만 1회 사용으로 차감한다. (서버 호출 실패 시 차감하지 않아 재시도 가능)
+    const ok = await runAiGuide(action);
+    if (ok) {
+      setReviewCounts((current) => ({ ...current, [reviewKey]: 1 }));
+      markAiGuideUsed({ uid: user.uid, problemId: reviewKey }).catch((error) => {
+        console.error(error);
+        setDataWarning(`AI 가이드 사용 기록 저장 실패: ${error.message}`);
+      });
+    }
   }
 
   function markProblemCompleted(problemId, nodeId = selectedSkillId) {
