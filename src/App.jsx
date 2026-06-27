@@ -43,6 +43,7 @@ import {
   loadAiUsageLogsForUsers,
   loadAttemptsForUsers,
   loadAllProblems,
+  loadGuideHelpUsageForUser,
   loadLeaderboard,
   loadProblemsBySkill,
   loadProgressForUsers,
@@ -50,6 +51,7 @@ import {
   loadSkills,
   loadUserProfile,
   loadUsers,
+  markGuideHelpUsed,
   markAiGuideUsed,
   markFirstLoginChatNotified,
   saveAiUsageLog,
@@ -482,11 +484,17 @@ export default function App() {
           if (!localStorage.getItem(ONBOARDING_KEY)) {
             setTimeout(() => setShowOnboarding(true), 800);
           }
-          if (nextUser.email === "totoriverce@gmail.com") {
-            await seedCatalogIfNeeded();
-          }
-          await refreshCatalog();
-          setDataWarning("");
+          setAuthReady(true);
+          (async () => {
+            if (nextUser.email === "totoriverce@gmail.com") {
+              await seedCatalogIfNeeded();
+            }
+            await refreshCatalog();
+            setDataWarning("");
+          })().catch((error) => {
+            console.error(error);
+            setDataWarning(`학습 데이터 동기화 실패: ${error.message}`);
+          });
         } catch (error) {
           console.error(error);
           setDataWarning(`Firestore 연결/권한 확인 필요: ${error.message}`);
@@ -579,10 +587,11 @@ export default function App() {
 
   async function refreshCatalog() {
     const uid = auth.currentUser?.uid;
-    const [loadedSkills, loadedLeaders, progressMap] = await Promise.all([
+    const [loadedSkills, loadedLeaders, progressMap, guideHelpUsed] = await Promise.all([
       loadSkills(),
       loadLeaderboard(),
       uid ? loadProgressForUser(uid) : Promise.resolve({}),
+      uid ? loadGuideHelpUsageForUser(uid) : Promise.resolve({}),
     ]);
     if (loadedSkills.length) setSkills(sortSkillsByCurriculumOrder(loadedSkills));
     setLeaderboard(loadedLeaders.filter((u) => u.role === "student" && u.onboardingComplete && !u.isMock));
@@ -592,6 +601,17 @@ export default function App() {
     }
     if (me) setProfile(me);
     setSolvedBySkill(progressMap);
+    if (uid) {
+      setHintUsed((current) => {
+        const merged = { ...guideHelpUsed };
+        Object.entries(current).forEach(([problemId, actions]) => {
+          const previous = Array.isArray(merged[problemId]) ? merged[problemId] : [];
+          const next = Array.isArray(actions) ? actions : [];
+          merged[problemId] = Array.from(new Set([...previous, ...next]));
+        });
+        return merged;
+      });
+    }
   }
 
   async function refreshMembers(nextProfile = profile) {
@@ -742,12 +762,17 @@ export default function App() {
     return (Number(used) || 0) * 0.05;
   }
 
-  function trackHintUse(problemId, actionKey) {
+  function trackHintUse(problemId, actionKey, nodeId = selectedSkillId) {
     setHintUsed((current) => {
       const previous = current[problemId];
       const used = Array.isArray(previous) ? previous : [];
       if (used.includes(actionKey)) return current;
       return { ...current, [problemId]: [...used, actionKey] };
+    });
+    if (!user || !nodeId) return;
+    markGuideHelpUsed({ uid: user.uid, nodeId, problemId, actionKey }).catch((error) => {
+      console.error(error);
+      setDataWarning(`힌트 사용 기록 저장 실패: ${error.message}`);
     });
   }
 
@@ -816,13 +841,13 @@ export default function App() {
 
     // 풀이 방향 / 힌트 받기: 내장(정적) 가이드를 즉시 보여준다. OpenAI를 쓰지 않는다. (XP만 차감)
     if (action.key === "next") {
-      trackHintUse(selectedProblem.id, action.key);
+      trackHintUse(selectedProblem.id, action.key, selectedProblem.nodeId);
       setGuide(getFreshProblemGuide(selectedProblem, "nextStep") || `## 풀이 방향\n- ${selectedProblem.concept}`);
       return;
     }
 
     if (action.key === "hint") {
-      trackHintUse(selectedProblem.id, action.key);
+      trackHintUse(selectedProblem.id, action.key, selectedProblem.nodeId);
       setGuide(getFreshProblemGuide(selectedProblem, "hint") || `## 힌트\n- ${selectedProblem.concept}`);
       return;
     }

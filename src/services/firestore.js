@@ -133,6 +133,21 @@ export async function loadProgressForUser(uid) {
   return result;
 }
 
+export async function loadGuideHelpUsageForUser(uid) {
+  const q = query(collection(db, "progress"), where("uid", "==", uid));
+  const snap = await getDocs(q);
+  const result = {};
+  snap.docs.forEach((d) => {
+    const data = d.data();
+    const helpUsedByProblem = data.guideHelpUsedByProblem || {};
+    Object.entries(helpUsedByProblem).forEach(([problemId, actions]) => {
+      if (!problemId || !Array.isArray(actions)) return;
+      result[problemId] = Array.from(new Set(actions.filter(Boolean)));
+    });
+  });
+  return result;
+}
+
 export async function loadProgressForUsers(userIds) {
   if (!userIds.length) return [];
   const uniqueUserIds = Array.from(new Set(userIds.filter(Boolean)));
@@ -216,6 +231,16 @@ export async function markAiGuideUsed({ uid, problemId }) {
   if (!uid || !problemId) return;
   await updateDoc(doc(db, "users", uid), {
     [`aiGuideReviewCounts.${problemId}`]: 1,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function markGuideHelpUsed({ uid, nodeId, problemId, actionKey }) {
+  if (!uid || !nodeId || !problemId || !actionKey) return;
+  const ref = doc(db, "progress", `${uid}_${nodeId}`);
+  await setDoc(ref, { uid, nodeId, updatedAt: serverTimestamp() }, { merge: true });
+  await updateDoc(ref, {
+    [`guideHelpUsedByProblem.${problemId}`]: arrayUnion(actionKey),
     updatedAt: serverTimestamp(),
   });
 }
