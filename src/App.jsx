@@ -103,6 +103,7 @@ const problemLookup = new Map(generatedProblems.map((problem) => [problem.id, pr
 const defaultSkillId = "m1-numbers";
 const defaultProblemId = "p-m1-numbers-01";
 const skillOrder = new Map(curriculumNodes.map((skill, index) => [skill.id, index]));
+const solvedCachePrefix = "study-solved-cache:";
 
 function sortSkillsByCurriculumOrder(skillList = []) {
   return [...skillList].sort((a, b) => {
@@ -111,6 +112,36 @@ function sortSkillsByCurriculumOrder(skillList = []) {
     if (orderA !== orderB) return orderA - orderB;
     return String(a.title || a.id).localeCompare(String(b.title || b.id), "ko");
   });
+}
+
+function mergeSolvedMaps(...maps) {
+  const result = {};
+  for (const map of maps) {
+    Object.entries(map || {}).forEach(([nodeId, problemIds]) => {
+      const solved = new Set(result[nodeId] || []);
+      (Array.isArray(problemIds) ? problemIds : []).forEach((problemId) => solved.add(problemId));
+      result[nodeId] = Array.from(solved);
+    });
+  }
+  return result;
+}
+
+function readSolvedCache(uid) {
+  if (!uid) return {};
+  try {
+    return JSON.parse(localStorage.getItem(`${solvedCachePrefix}${uid}`) || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function writeSolvedCache(uid, solvedMap) {
+  if (!uid) return;
+  try {
+    localStorage.setItem(`${solvedCachePrefix}${uid}`, JSON.stringify(solvedMap || {}));
+  } catch {
+    // localStorage may be unavailable in private browsing.
+  }
 }
 
 function getSequentialUnlockedSkills(skillList = [], completedSkillIds = []) {
@@ -555,6 +586,7 @@ export default function App() {
               .then(() => markFirstLoginChatNotified(nextUser.uid))
               .catch((error) => console.error("First login notification failed:", error));
           }
+          setSolvedBySkill(readSolvedCache(nextUser.uid));
           setSelectedSkillId(nextProfile.lastSkillId || defaultSkillId);
           setSelectedProblemId(nextProfile.lastProblemId || defaultProblemId);
           if (!localStorage.getItem(ONBOARDING_KEY)) {
@@ -577,6 +609,7 @@ export default function App() {
         }
       } else {
         setSolvedBySkill({});
+        setHintUsed({});
         auditLoginRef.current = "";
         parentViewAuditRef.current = "";
       }
@@ -683,7 +716,9 @@ export default function App() {
     setLeaderboard(loadedLeaders.filter((u) => u.role === "student" && u.onboardingComplete && !u.isMock));
     let me = loadedLeaders.find((item) => item.uid === uid);
     if (me) setProfile(me);
-    setSolvedBySkill(studyProgress.solvedBySkill);
+    const mergedSolved = mergeSolvedMaps(readSolvedCache(uid), studyProgress.solvedBySkill);
+    setSolvedBySkill(mergedSolved);
+    writeSolvedCache(uid, mergedSolved);
     if (uid) {
       setHintUsed((current) => {
         const merged = { ...studyProgress.guideHelpUsed };
@@ -967,7 +1002,9 @@ export default function App() {
     setSolvedBySkill((current) => {
       const solved = new Set(current[nodeId] || []);
       solved.add(problemId);
-      return { ...current, [nodeId]: Array.from(solved) };
+      const next = { ...current, [nodeId]: Array.from(solved) };
+      writeSolvedCache(user?.uid, next);
+      return next;
     });
   }
 
