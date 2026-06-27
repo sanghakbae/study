@@ -746,7 +746,7 @@ export default function App() {
     });
   }
 
-  // 힌트·풀이 방향·AI 가이드를 모두 /api/guide(OpenAI)로 문제 기준 맞춤 생성한다.
+  // AI 가이드(내 풀이 점검)만 /api/guide(OpenAI)로 생성한다. 힌트·풀이 방향은 내장 정적 가이드를 쓴다.
   // AI 사용 로그도 여기서 남는다.
   async function runAiGuide(action) {
     setGuideLoading(true);
@@ -809,10 +809,16 @@ export default function App() {
       return;
     }
 
-    // 풀이 방향 / 힌트 받기: 문제 기준으로 AI가 생성 (XP 차감)
-    if (action.key === "next" || action.key === "hint") {
+    // 풀이 방향 / 힌트 받기: 내장(정적) 가이드를 즉시 보여준다. OpenAI를 쓰지 않는다. (XP만 차감)
+    if (action.key === "next") {
       trackHintUse(selectedProblem.id, action.key);
-      await runAiGuide(action);
+      setGuide(getFreshProblemGuide(selectedProblem, "nextStep") || `## 풀이 방향\n- ${selectedProblem.concept}`);
+      return;
+    }
+
+    if (action.key === "hint") {
+      trackHintUse(selectedProblem.id, action.key);
+      setGuide(getFreshProblemGuide(selectedProblem, "hint") || `## 힌트\n- ${selectedProblem.concept}`);
       return;
     }
 
