@@ -4045,15 +4045,6 @@ li:nth-child(3) .rank-num { color: #b45309; }
   padding: 2px 0;
 }
 
-.answer-example {
-  display: block;
-  color: #64748b;
-  font-size: 0.82rem;
-  font-weight: 750;
-  line-height: 1.25;
-  padding: 1px 0 0;
-}
-
 .canvas-with-choices {
   display: flex;
   flex-direction: row;

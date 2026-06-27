@@ -191,32 +191,27 @@ function isCorrectMathAnswer(input, answer, problem) {
 function getAnswerInputExample(problem) {
   if (!problem || problem.choices?.length) return "";
   if (isTermConstantProblem(problem)) {
-    const parsed = parseTermConstantAnswer(problem.answer);
-    if (parsed) return `입력 예: ${parsed.coefficient}, ${parsed.constant} 또는 x항: ${parsed.coefficient}x, 상수항: ${parsed.constant}`;
+    return "예: x항, 상수항";
   }
   const answer = String(problem.answer ?? "").trim();
-  if (!answer) return "입력 예: 12";
-  if (/x\s*=/.test(answer) && /y\s*=/.test(answer)) return "입력 예: x=2, y=-1";
-  if (/합\s*:/.test(answer) && /곱\s*:/.test(answer)) return "입력 예: 합: 5, 곱: 6";
-  if (/면\s*:/.test(answer) && /꼭짓점\s*:/.test(answer)) return "입력 예: 면: 6, 꼭짓점: 8, 모서리: 12";
-  if (/^\(.+\)$/.test(answer)) return "입력 예: (2, -3)";
-  if (/^[+-]?\d+\s*,/.test(answer)) return "입력 예: -3, 0, 2";
-  if (/^\d+\s*:\s*\d+/.test(answer)) return "입력 예: 4:9";
-  if (/[+-]?\d+\/[+-]?\d+/.test(answer)) return "입력 예: 3/4";
-  if (/±/.test(answer)) return "입력 예: ±√5";
-  if (/√/.test(answer)) return "입력 예: 3√2";
-  if (/°/.test(answer)) return "입력 예: 60°";
-  if (/원/.test(answer)) return "입력 예: 1500원";
-  if (/km/.test(answer)) return "입력 예: 120km";
-  if (/cm³|m³/.test(answer)) return "입력 예: 12π cm³";
-  if (/cm²|m²/.test(answer)) return "입력 예: 24cm²";
-  if (/cm|m/.test(answer)) return "입력 예: 8cm";
-  if (/π/.test(answer)) return "입력 예: 12π";
-  if (/[a-zA-Z가-힣]\s*=/.test(answer)) return "입력 예: x=3";
-  if (/[a-zA-Z]/.test(answer)) return "입력 예: 3x + 2";
-  if (/제\d사분면/.test(answer)) return "입력 예: 제1사분면";
-  if (/[가-힣]/.test(answer)) return "입력 예: 두 쌍의 대응하는 각이 각각 같다";
-  return "입력 예: 12";
+  if (!answer || /^[+-]?\d+(\.\d+)?$/.test(answer)) return "";
+  if (/x\s*=/.test(answer) && /y\s*=/.test(answer)) return "예: x=값, y=값";
+  if (/합\s*:/.test(answer) && /곱\s*:/.test(answer)) return "예: 합: 값, 곱: 값";
+  if (/면\s*:/.test(answer) && /꼭짓점\s*:/.test(answer)) return "예: 면: 값, 꼭짓점: 값, 모서리: 값";
+  if (/^\(.+\)$/.test(answer)) return "예: (x좌표, y좌표)";
+  if (/^[+-]?\d+\s*,/.test(answer)) return "예: 값, 값, 값";
+  if (/^\d+\s*:\s*\d+/.test(answer)) return "예: 값:값";
+  if (/[+-]?\d+\/[+-]?\d+/.test(answer)) return "예: 분자/분모";
+  if (/±/.test(answer)) return "예: ±값";
+  if (/√/.test(answer)) return "예: 계수√수";
+  if (/°/.test(answer)) return "예: 값°";
+  if (/원|km|cm³|m³|cm²|m²|cm|m/.test(answer)) return "예: 값+단위";
+  if (/π/.test(answer)) return "예: 계수π";
+  if (/[a-zA-Z가-힣]\s*=/.test(answer)) return "예: 문자=값";
+  if (/[a-zA-Z]/.test(answer)) return "예: 정리한 식";
+  if (/제\d사분면/.test(answer)) return "예: 제n사분면";
+  if (/[가-힣]/.test(answer)) return "예: 핵심 조건을 문장으로 입력";
+  return "";
 }
 
 function getProblemOrder(problem) {
@@ -4699,7 +4694,6 @@ const NotebookPanel = forwardRef(function NotebookPanel(
             </button>
           </div>
         )}
-        {!(selectedProblem?.choices?.length > 0) && answerInputExample && <small className="answer-example">{answerInputExample}</small>}
         {!(selectedProblem?.choices?.length > 0) && answerCheck?.status === "correct" && <small className="answer-msg correct">✓ 정답입니다!</small>}
         {!(selectedProblem?.choices?.length > 0) && answerCheck?.status === "wrong" && <small className="answer-msg wrong">✗ 오답입니다. 힌트·풀이 방향을 활용하세요.</small>}
       </div>
