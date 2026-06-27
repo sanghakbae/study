@@ -26,6 +26,7 @@ import {
   RefreshCw,
   Save,
   Search,
+  Share2,
   ShieldCheck,
   Sparkles,
   ScrollText,
@@ -1734,6 +1735,33 @@ function getCurrentMonthPeriod(date = new Date()) {
   return { startTime: start.getTime(), endTime: end.getTime(), label };
 }
 
+const SHARE_TEXT = `📐 Study Math Arena
+중등부터 고등까지, 스킬을 열며 푸는 수학 학습 플랫폼입니다.
+
+✅ 스킬 트리 방식으로 단계별 수학 학습
+✅ AI 풀이 도우미로 막히는 문제 즉시 해결
+✅ 손글씨 필기 공간과 오답 노트 제공
+✅ 랭킹·XP 시스템으로 동기 부여
+✅ 학부모 자녀 학습 리포트 제공
+
+👉 https://study.sanghak.kr`;
+
+function ShareButton() {
+  const [copied, setCopied] = useState(false);
+  function handleShare() {
+    navigator.clipboard.writeText(SHARE_TEXT).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+  return (
+    <button type="button" className={`icon-button share-btn ${copied ? "copied" : ""}`} onClick={handleShare} aria-label="공유">
+      <Share2 size={16} />
+      <span className="topbar-menu-label">{copied ? "복사됨!" : "공유"}</span>
+    </button>
+  );
+}
+
 function Topbar({ user, profile, rank = 0, wrongCount = 0, onWrongNotebookClick, onRankClick, onLogout }) {
   return (
     <header className="topbar">
@@ -1772,6 +1800,7 @@ function Topbar({ user, profile, rank = 0, wrongCount = 0, onWrongNotebookClick,
           {user.photoURL ? <img src={user.photoURL} alt="" /> : <UserRound size={18} />}
           <span>{maskName(user.displayName) || "러너"}</span>
         </div>
+        <ShareButton />
         <button className="icon-button" onClick={onLogout || (() => signOut(auth))} aria-label="로그아웃">
           <LogOut size={18} />
         </button>
