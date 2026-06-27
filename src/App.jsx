@@ -381,7 +381,7 @@ export default function App() {
   const auditLoginRef = useRef("");
   const parentViewAuditRef = useRef("");
   const examSubmitLockRef = useRef(false);
-  const saveAttemptLockRef = useRef(false);
+  const savingProblemIdsRef = useRef(new Set());
   const examAvailabilityRef = useRef(null);
 
   const selectedSkill = useMemo(
@@ -860,32 +860,23 @@ export default function App() {
     });
   }
 
-  function advanceToNextProblem(completedProblemId) {
-    const solved = new Set([...(solvedBySkill[selectedSkillId] || []), completedProblemId]);
-    const nextProblem = problems.find((problem) => !solved.has(problem.id));
+  function advanceToNextProblem(completedProblemId, nodeId = selectedSkillId) {
+    const solved = new Set([...(solvedBySkillRef.current[nodeId] || solvedBySkill[nodeId] || []), completedProblemId]);
+    const nextProblem = problems.find((problem) => problem.nodeId === nodeId && !solved.has(problem.id));
     if (nextProblem) {
       setSelectedProblemId(nextProblem.id);
       return;
     }
-    const total = getProblemCountForSkill(selectedSkillId);
+    const total = getProblemCountForSkill(nodeId);
     setGuide(`이 스킬의 ${total}문제를 모두 완료했습니다. 스킬 트리에서 다음 열린 스킬을 선택하세요.`);
   }
 
   async function completeProblem(problemOverride = selectedProblem, submittedAnswerOverride = "") {
     if (!user || !problemOverride) return;
-    if (saveAttemptLockRef.current) return;
-    saveAttemptLockRef.current = true;
     const problem = problemOverride;
-    setSaving(true);
-
-    const guidePenaltyRate = getGuidePenaltyRate(problem.id);
-    const helpUsed = Array.isArray(hintUsed[problem.id]) ? hintUsed[problem.id] : [];
-    const submittedAnswer = submittedAnswerOverride || answerChecks[problem.id]?.input || "";
-    // 힌트 받기·풀이 방향만 정해진 비율로 XP를 차감한다. 개념 학습은 기본 제공이라 차감하지 않는다.
-    const xpMultiplier = Math.max(0.3, 1 - guidePenaltyRate);
 
     let completedSkillReward = null;
-    const prevSolved = solvedBySkill[problem.nodeId] || [];
+    const prevSolved = solvedBySkillRef.current[problem.nodeId] || solvedBySkill[problem.nodeId] || [];
     const total = getProblemCountForSkill(problem.nodeId);
     const wasComplete = prevSolved.length >= total;
     const nowComplete = !prevSolved.includes(problem.id) && prevSolved.length + 1 >= total;
@@ -893,6 +884,20 @@ export default function App() {
       const skill = skills.find((s) => s.id === problem.nodeId) || curriculumNodes.find((s) => s.id === problem.nodeId);
       completedSkillReward = { skill, bonus: skill?.xp || 0 };
     }
+
+    markProblemCompleted(problem.id, problem.nodeId);
+    advanceToNextProblem(problem.id, problem.nodeId);
+
+    const savingKey = `${user.uid}_${problem.id}`;
+    if (savingProblemIdsRef.current.has(savingKey)) return;
+    savingProblemIdsRef.current.add(savingKey);
+    setSaving(true);
+
+    const guidePenaltyRate = getGuidePenaltyRate(problem.id);
+    const helpUsed = Array.isArray(hintUsed[problem.id]) ? hintUsed[problem.id] : [];
+    const submittedAnswer = submittedAnswerOverride || answerChecks[problem.id]?.input || "";
+    // 힌트 받기·풀이 방향만 정해진 비율로 XP를 차감한다. 개념 학습은 기본 제공이라 차감하지 않는다.
+    const xpMultiplier = Math.max(0.3, 1 - guidePenaltyRate);
 
     try {
       await saveAttempt({
@@ -918,8 +923,6 @@ export default function App() {
           helpUsed,
         },
       }).catch(() => {});
-      markProblemCompleted(problem.id, problem.nodeId);
-      advanceToNextProblem(problem.id);
       if (completedSkillReward) {
         setAcquiredSkill(completedSkillReward);
         if (completedSkillReward.bonus) {
@@ -934,10 +937,10 @@ export default function App() {
       await refreshMembers();
     } catch (error) {
       console.error(error);
-      setGuide(`완료 기록 실패: ${error.message}`);
+      setDataWarning(`완료 기록 저장 실패: ${error.message}`);
     } finally {
       setSaving(false);
-      saveAttemptLockRef.current = false;
+      savingProblemIdsRef.current.delete(savingKey);
     }
   }
 
