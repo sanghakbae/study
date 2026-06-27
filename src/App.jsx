@@ -1794,7 +1794,7 @@ function Topbar({ user, profile, rank = 0, wrongCount = 0, onWrongNotebookClick,
           <Gamepad2 size={22} />
         </div>
         <div>
-          <strong>Study Math Arena</strong>
+          <strong>Study <span className="brand-line2">Math Arena</span></strong>
           <span>중등부터 고등까지, 스킬을 열며 푸는 수학</span>
         </div>
       </div>

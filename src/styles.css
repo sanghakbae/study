@@ -5052,8 +5052,14 @@ li:nth-child(3) .rank-num { color: #b45309; }
   }
 
   .brand-block strong {
-    font-size: 0.72rem;
-    white-space: nowrap;
+    font-size: 0.74rem;
+    line-height: 1.1;
+    white-space: normal;
+  }
+
+  /* 모바일: "Study" / "Math Arena" 두 줄로 개행 */
+  .brand-block strong .brand-line2 {
+    display: block;
   }
 
   .brand-block span {
