@@ -328,31 +328,70 @@ export async function saveAiUsageLog({ user, problem, action, usage, model }) {
   }).catch((error) => console.error("Audit AI log failed:", error));
 }
 
-export async function saveAttempt({ user, problem, strokes, guide, isCorrect, status, alreadySolved, xpMultiplier = 1, submittedAnswer = "", helpUsed = [] }) {
-  const attemptRef = doc(collection(db, "attempts"));
+export async function saveAttempt({ user, problem, strokes, guide, isCorrect, status, xpMultiplier = 1, submittedAnswer = "", helpUsed = [] }) {
   const completed = status === "completed";
   const wrong = status === "wrong";
-  const baseXp = completed && !alreadySolved ? 30 + problem.difficulty * 10 : 0;
-  const xpGain = Math.round(baseXp * Math.min(1, Math.max(0.3, xpMultiplier)));
-  await setDoc(attemptRef, {
-    uid: user.uid,
-    problemId: problem.id,
-    nodeId: problem.nodeId,
-    problemTitle: problem.title || problem.id,
-    problemPrompt: problem.prompt || "",
-    submittedAnswer,
-    helpUsed,
-    strokes,
-    guide,
-    isCorrect: completed && isCorrect,
-    status,
-    saved: status === "saved",
-    wrong,
-    completed,
-    xpGain,
-    createdAt: serverTimestamp(),
-    completedAt: completed ? serverTimestamp() : null,
+  const attemptRef = doc(collection(db, "attempts"));
+  const userRef = doc(db, "users", user.uid);
+  const progressRef = doc(db, "progress", `${user.uid}_${problem.nodeId}`);
+
+  // 트랜잭션: 원자 3-way 쓰기 + 서버에서 alreadySolved 검증 (클라이언트 상태 우회 방지)
+  const xpGain = await runTransaction(db, async (transaction) => {
+    const progressSnap = await transaction.get(progressRef);
+    const alreadySolved = (progressSnap.data()?.solvedProblemIds || []).includes(problem.id);
+    const baseXp = completed && !alreadySolved ? 30 + problem.difficulty * 10 : 0;
+    const gain = Math.round(baseXp * Math.min(1, Math.max(0.3, xpMultiplier)));
+
+    transaction.set(attemptRef, {
+      uid: user.uid,
+      problemId: problem.id,
+      nodeId: problem.nodeId,
+      problemTitle: problem.title || problem.id,
+      problemPrompt: problem.prompt || "",
+      submittedAnswer,
+      helpUsed,
+      strokes,
+      guide,
+      isCorrect: completed && isCorrect,
+      status,
+      saved: status === "saved",
+      wrong,
+      completed,
+      xpGain: gain,
+      createdAt: serverTimestamp(),
+      completedAt: completed ? serverTimestamp() : null,
+    });
+
+    transaction.update(userRef, {
+      xp: increment(gain),
+      solvedCount: increment(completed && !alreadySolved ? 1 : 0),
+      lastActivityAt: serverTimestamp(),
+      ...(completed ? { lastSolvedAt: serverTimestamp() } : {}),
+    });
+
+    transaction.set(
+      progressRef,
+      {
+        uid: user.uid,
+        nodeId: problem.nodeId,
+        updatedAt: serverTimestamp(),
+        ...(completed
+          ? {
+              solvedProblemIds: arrayUnion(problem.id),
+              completedCount: increment(1),
+              lastCompletedProblemId: problem.id,
+            }
+          : {
+              savedProblemIds: arrayUnion(problem.id),
+              lastSavedProblemId: problem.id,
+            }),
+      },
+      { merge: true },
+    );
+
+    return gain;
   });
+
   saveAuditLog({
     user,
     action: completed ? "problem_completed" : wrong ? "problem_wrong" : "problem_saved",
@@ -369,34 +408,6 @@ export async function saveAttempt({ user, problem, strokes, guide, isCorrect, st
     },
   }).catch((error) => console.error("Audit attempt log failed:", error));
 
-  const userRef = doc(db, "users", user.uid);
-  await updateDoc(userRef, {
-    xp: increment(xpGain),
-    solvedCount: increment(completed && !alreadySolved ? 1 : 0),
-    lastActivityAt: serverTimestamp(),
-    ...(completed ? { lastSolvedAt: serverTimestamp() } : {}),
-  });
-
-  const progressRef = doc(db, "progress", `${user.uid}_${problem.nodeId}`);
-  await setDoc(
-    progressRef,
-    {
-      uid: user.uid,
-      nodeId: problem.nodeId,
-      updatedAt: serverTimestamp(),
-      ...(completed
-        ? {
-            solvedProblemIds: arrayUnion(problem.id),
-            completedCount: increment(1),
-            lastCompletedProblemId: problem.id,
-          }
-        : {
-            savedProblemIds: arrayUnion(problem.id),
-            lastSavedProblemId: problem.id,
-          }),
-    },
-    { merge: true },
-  );
   return { xpGain };
 }
 

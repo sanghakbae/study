@@ -28,7 +28,12 @@ service cloud.firestore {
           isAdmin()
           || (
             request.auth.uid == userId
+            // student/parents만 허용 (admin 자가 승격 차단)
             && request.resource.data.role in ["student", "parents"]
+            // 온보딩 완료 후에는 역할 변경 불가
+            && (!resource.data.onboardingComplete || request.resource.data.role == resource.data.role)
+            // student는 parentOf 필드 변경 불가 (무단 자녀 등록 차단)
+            && (resource.data.role != "student" || request.resource.data.parentOf == resource.data.parentOf)
           )
         );
     }

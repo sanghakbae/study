@@ -93,8 +93,7 @@ const guideActions = [
   { key: "concept", label: "개념 학습", icon: BookOpen },
 ];
 
-const googleChatWebhookUrl =
-  "https://chat.googleapis.com/v1/spaces/AAQAsHoLq4o/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=zE3M4fD3RWyo3bBzQmJgQeDaIceidFpOpimu5KSvilw";
+const notifyEndpoint = "/api/notify";
 
 const gradeOptions = ["중1", "중2", "중3", "고1", "고2", "고3"];
 const problemLookup = new Map(generatedProblems.map((problem) => [problem.id, problem]));
@@ -343,6 +342,7 @@ export default function App() {
   const auditLoginRef = useRef("");
   const parentViewAuditRef = useRef("");
   const examSubmitLockRef = useRef(false);
+  const saveAttemptLockRef = useRef(false);
   const examAvailabilityRef = useRef(null);
 
   const selectedSkill = useMemo(
@@ -463,10 +463,9 @@ export default function App() {
 
   async function notifyFirstLogin(nextUser, nextProfile) {
     const text = buildFirstLoginChatMessage(nextUser, nextProfile);
-    await fetch(googleChatWebhookUrl, {
+    await fetch(notifyEndpoint, {
       method: "POST",
-      mode: "no-cors",
-      headers: { "Content-Type": "text/plain;charset=UTF-8" },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text }),
     });
   }
@@ -805,10 +804,11 @@ export default function App() {
 
   async function handleSaveAttempt(completed, problemOverride = selectedProblem) {
     if (!user || !problemOverride) return;
+    if (saveAttemptLockRef.current) return;
+    saveAttemptLockRef.current = true;
     const problem = problemOverride;
     setSaving(true);
 
-    const alreadySolved = (solvedBySkill[problem.nodeId] || []).includes(problem.id);
     const hints = getGuidePenaltyCount(problem.id);
     const helpUsed = Array.isArray(hintUsed[problem.id]) ? hintUsed[problem.id] : [];
     const submittedAnswer = answerChecks[problem.id]?.input || "";
@@ -835,7 +835,6 @@ export default function App() {
         guide,
         isCorrect: completed,
         status: completed ? "completed" : "saved",
-        alreadySolved,
         xpMultiplier,
         submittedAnswer,
         helpUsed,
@@ -850,7 +849,6 @@ export default function App() {
           nodeId: problem.nodeId || "",
           problemId: problem.id || "",
           helpUsed,
-          alreadySolved,
         },
       }).catch(() => {});
       if (completed) {
@@ -877,6 +875,7 @@ export default function App() {
       setGuide(`${completed ? "해결 완료" : "저장"} 기록 실패: ${error.message}`);
     } finally {
       setSaving(false);
+      saveAttemptLockRef.current = false;
     }
   }
 
