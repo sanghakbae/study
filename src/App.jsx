@@ -43,11 +43,10 @@ import {
   loadAiUsageLogsForUsers,
   loadAttemptsForUsers,
   loadAllProblems,
-  loadGuideHelpUsageForUser,
   loadLeaderboard,
   loadProblemsBySkill,
   loadProgressForUsers,
-  loadProgressForUser,
+  loadStudyProgressForUser,
   loadSkills,
   loadUserProfile,
   loadUsers,
@@ -133,6 +132,92 @@ export function normalizeMathAnswer(value) {
     .replace(/[()]/g, "")
     .replace(/−/g, "-")
     .toLowerCase();
+}
+
+function normalizeCoefficient(value) {
+  const raw = String(value ?? "").trim().replace(/−/g, "-").replace(/x/gi, "");
+  if (!raw || raw === "+") return "1";
+  if (raw === "-") return "-1";
+  return raw.replace(/^\+/, "");
+}
+
+function parseTermConstantAnswer(value) {
+  const raw = String(value ?? "")
+    .replace(/−/g, "-")
+    .replace(/[()]/g, "")
+    .trim()
+    .toLowerCase();
+  if (!raw) return null;
+
+  const labeledTerm = raw.match(/x\s*항\s*[:：]?\s*([+-]?\d*)\s*x?/);
+  const labeledConstant = raw.match(/상수\s*항\s*[:：]?\s*([+-]?\d+)/);
+  if (labeledTerm && labeledConstant) {
+    return { coefficient: normalizeCoefficient(labeledTerm[1]), constant: labeledConstant[1].replace(/^\+/, "") };
+  }
+
+  const parts = raw
+    .split(/[,\n;/]+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (parts.length >= 2) {
+    const coefficient = parts[0].match(/[+-]?\d*\s*x|[+-]?\d+/);
+    const constant = parts[1].match(/[+-]?\d+/);
+    if (coefficient && constant) {
+      return { coefficient: normalizeCoefficient(coefficient[0]), constant: constant[0].replace(/^\+/, "") };
+    }
+  }
+
+  const spacedTokens = raw.match(/[+-]?\d*\s*x|[+-]?\d+/g);
+  if (spacedTokens?.length >= 2 && /[\s,;/]/.test(raw)) {
+    return { coefficient: normalizeCoefficient(spacedTokens[0]), constant: spacedTokens[1].replace(/^\+/, "") };
+  }
+  return null;
+}
+
+function isTermConstantProblem(problem) {
+  return /x\s*항.*상수\s*항/.test(String(problem?.prompt || "")) && /x\s*항.*상수\s*항/.test(String(problem?.answer || ""));
+}
+
+function isCorrectMathAnswer(input, answer, problem) {
+  if (isTermConstantProblem(problem)) {
+    const expected = parseTermConstantAnswer(answer);
+    const submitted = parseTermConstantAnswer(input);
+    if (expected && submitted) {
+      return expected.coefficient === submitted.coefficient && expected.constant === submitted.constant;
+    }
+  }
+  return normalizeMathAnswer(input) === normalizeMathAnswer(answer);
+}
+
+function getAnswerInputExample(problem) {
+  if (!problem || problem.choices?.length) return "";
+  if (isTermConstantProblem(problem)) {
+    const parsed = parseTermConstantAnswer(problem.answer);
+    if (parsed) return `입력 예: ${parsed.coefficient}, ${parsed.constant} 또는 x항: ${parsed.coefficient}x, 상수항: ${parsed.constant}`;
+  }
+  const answer = String(problem.answer ?? "").trim();
+  if (!answer) return "입력 예: 12";
+  if (/x\s*=/.test(answer) && /y\s*=/.test(answer)) return "입력 예: x=2, y=-1";
+  if (/합\s*:/.test(answer) && /곱\s*:/.test(answer)) return "입력 예: 합: 5, 곱: 6";
+  if (/면\s*:/.test(answer) && /꼭짓점\s*:/.test(answer)) return "입력 예: 면: 6, 꼭짓점: 8, 모서리: 12";
+  if (/^\(.+\)$/.test(answer)) return "입력 예: (2, -3)";
+  if (/^[+-]?\d+\s*,/.test(answer)) return "입력 예: -3, 0, 2";
+  if (/^\d+\s*:\s*\d+/.test(answer)) return "입력 예: 4:9";
+  if (/[+-]?\d+\/[+-]?\d+/.test(answer)) return "입력 예: 3/4";
+  if (/±/.test(answer)) return "입력 예: ±√5";
+  if (/√/.test(answer)) return "입력 예: 3√2";
+  if (/°/.test(answer)) return "입력 예: 60°";
+  if (/원/.test(answer)) return "입력 예: 1500원";
+  if (/km/.test(answer)) return "입력 예: 120km";
+  if (/cm³|m³/.test(answer)) return "입력 예: 12π cm³";
+  if (/cm²|m²/.test(answer)) return "입력 예: 24cm²";
+  if (/cm|m/.test(answer)) return "입력 예: 8cm";
+  if (/π/.test(answer)) return "입력 예: 12π";
+  if (/[a-zA-Z가-힣]\s*=/.test(answer)) return "입력 예: x=3";
+  if (/[a-zA-Z]/.test(answer)) return "입력 예: 3x + 2";
+  if (/제\d사분면/.test(answer)) return "입력 예: 제1사분면";
+  if (/[가-힣]/.test(answer)) return "입력 예: 두 쌍의 대응하는 각이 각각 같다";
+  return "입력 예: 12";
 }
 
 function getProblemOrder(problem) {
@@ -379,6 +464,7 @@ export default function App() {
   const workspaceRef = useRef(null);
   // 스킬별 푼 문제 집합을 ref로도 들고 있어, 문제 로드 effect가 매 풀이마다 재실행되지 않으면서 최신 진행도를 참조한다.
   const solvedBySkillRef = useRef(solvedBySkill);
+  const studyLocationTimerRef = useRef(null);
   const deployVersionRef = useRef("");
   const auditLoginRef = useRef("");
   const parentViewAuditRef = useRef("");
@@ -553,10 +639,13 @@ export default function App() {
 
   useEffect(() => {
     if (!authReady || !user || !selectedSkillId || !selectedProblemId) return;
-    updateStudyLocation({ uid: user.uid, skillId: selectedSkillId, problemId: selectedProblemId }).catch((error) => {
-      console.error(error);
-      setDataWarning(`최근 학습 위치 저장 실패: ${error.message}`);
-    });
+    window.clearTimeout(studyLocationTimerRef.current);
+    studyLocationTimerRef.current = window.setTimeout(() => {
+      updateStudyLocation({ uid: user.uid, skillId: selectedSkillId, problemId: selectedProblemId }).catch((error) => {
+        console.error(error);
+      });
+    }, 2000);
+    return () => window.clearTimeout(studyLocationTimerRef.current);
   }, [authReady, selectedSkillId, selectedProblemId, user]);
 
   useEffect(() => {
@@ -587,11 +676,10 @@ export default function App() {
 
   async function refreshCatalog() {
     const uid = auth.currentUser?.uid;
-    const [loadedSkills, loadedLeaders, progressMap, guideHelpUsed] = await Promise.all([
+    const [loadedSkills, loadedLeaders, studyProgress] = await Promise.all([
       loadSkills(),
       loadLeaderboard(),
-      uid ? loadProgressForUser(uid) : Promise.resolve({}),
-      uid ? loadGuideHelpUsageForUser(uid) : Promise.resolve({}),
+      uid ? loadStudyProgressForUser(uid) : Promise.resolve({ solvedBySkill: {}, guideHelpUsed: {} }),
     ]);
     if (loadedSkills.length) setSkills(sortSkillsByCurriculumOrder(loadedSkills));
     setLeaderboard(loadedLeaders.filter((u) => u.role === "student" && u.onboardingComplete && !u.isMock));
@@ -600,10 +688,10 @@ export default function App() {
       me = await loadUserProfile(uid);
     }
     if (me) setProfile(me);
-    setSolvedBySkill(progressMap);
+    setSolvedBySkill(studyProgress.solvedBySkill);
     if (uid) {
       setHintUsed((current) => {
-        const merged = { ...guideHelpUsed };
+        const merged = { ...studyProgress.guideHelpUsed };
         Object.entries(current).forEach(([problemId, actions]) => {
           const previous = Array.isArray(merged[problemId]) ? merged[problemId] : [];
           const next = Array.isArray(actions) ? actions : [];
@@ -657,6 +745,7 @@ export default function App() {
   }
 
   useEffect(() => {
+    if (!user || !["admin", "parents"].includes(profile.role)) return;
     refreshMembers().catch((error) => {
       console.error(error);
       setDataWarning(`회원/학습 기록 권한 확인 필요: ${error.message}`);
@@ -925,7 +1014,7 @@ export default function App() {
     const xpMultiplier = Math.max(0.3, 1 - guidePenaltyRate);
 
     try {
-      await saveAttempt({
+      const result = await saveAttempt({
         user,
         problem,
         strokes: notebookRef.current?.exportStrokes?.() || [],
@@ -936,30 +1025,24 @@ export default function App() {
         submittedAnswer,
         helpUsed,
       });
-      saveAuditLog({
-        user,
-        action: "problem_completed",
-        category: "learning",
-        message: problem.title || problem.prompt || problem.id || "문제",
-        metadata: {
-          role: profile.role || "student",
-          nodeId: problem.nodeId || "",
-          problemId: problem.id || "",
-          helpUsed,
-        },
-      }).catch(() => {});
+      if (result?.xpGain) {
+        setProfile((current) => ({
+          ...current,
+          xp: (Number(current.xp) || 0) + result.xpGain,
+          solvedCount: (Number(current.solvedCount) || 0) + 1,
+        }));
+      }
       if (completedSkillReward) {
         setAcquiredSkill(completedSkillReward);
         if (completedSkillReward.bonus) {
           try {
             await awardBonusXp({ user, amount: completedSkillReward.bonus });
+            setProfile((current) => ({ ...current, xp: (Number(current.xp) || 0) + completedSkillReward.bonus }));
           } catch (error) {
             console.error("스킬 완주 보너스 지급 실패:", error);
           }
         }
       }
-      await refreshCatalog();
-      await refreshMembers();
     } catch (error) {
       console.error(error);
       setDataWarning(`완료 기록 저장 실패: ${error.message}`);
@@ -969,11 +1052,9 @@ export default function App() {
     }
   }
 
-  const normalizeAnswer = normalizeMathAnswer;
-
   async function handleAnswerCheck(inputAnswer) {
     if (!user || !selectedProblem) return false;
-    const correct = normalizeAnswer(inputAnswer) === normalizeAnswer(selectedProblem.answer);
+    const correct = isCorrectMathAnswer(inputAnswer, selectedProblem.answer, selectedProblem);
     setAnswerChecks((current) => ({
       ...current,
       [selectedProblem.id]: {
@@ -989,8 +1070,24 @@ export default function App() {
     }
 
     setGuide("정답이 아닙니다. 힌트나 풀이 방향을 눌러 어디서 어긋났는지 확인하세요.");
+    const helpUsedWrong = Array.isArray(hintUsed[selectedProblem.id]) ? hintUsed[selectedProblem.id] : [];
+    const localWrongAttempt = {
+      id: `local-wrong-${selectedProblem.id}-${Date.now()}`,
+      uid: user.uid,
+      nodeId: selectedProblem.nodeId,
+      problemId: selectedProblem.id,
+      problemTitle: selectedProblem.title || selectedProblem.id,
+      problemPrompt: selectedProblem.prompt || "",
+      submittedAnswer: inputAnswer,
+      helpUsed: helpUsedWrong,
+      status: "wrong",
+      wrong: true,
+      completed: false,
+      createdAt: Date.now(),
+      pendingSync: true,
+    };
+    setActivityAttempts((current) => [localWrongAttempt, ...current]);
     try {
-      const helpUsedWrong = Array.isArray(hintUsed[selectedProblem.id]) ? hintUsed[selectedProblem.id] : [];
       await saveAttempt({
         user,
         problem: selectedProblem,
@@ -1001,23 +1098,9 @@ export default function App() {
         submittedAnswer: inputAnswer,
         helpUsed: helpUsedWrong,
       });
-      saveAuditLog({
-        user,
-        action: "problem_wrong",
-        category: "learning",
-        message: selectedProblem.title || selectedProblem.prompt || selectedProblem.id || "문제",
-        metadata: {
-          role: profile.role || "student",
-          nodeId: selectedProblem.nodeId || "",
-          problemId: selectedProblem.id || "",
-          submittedAnswer: inputAnswer,
-          helpUsed: helpUsedWrong,
-        },
-      }).catch(() => {});
-      await refreshMembers();
     } catch (error) {
       console.error(error);
-      setGuide(`오답 기록 저장 실패: ${error.message}`);
+      setDataWarning(`오답은 화면에 반영됐지만 DB 저장은 실패했습니다: ${error.message}`);
     }
     return false;
   }
@@ -1532,7 +1615,7 @@ function ExamModal({ exam, onSubmit, onCancel }) {
     setSubmitting(true);
     let correct = 0;
     problems.forEach((p, i) => {
-      if (normalizeMathAnswer(answers[i]) && normalizeMathAnswer(answers[i]) === normalizeMathAnswer(p.answer)) correct += 1;
+      if (normalizeMathAnswer(answers[i]) && isCorrectMathAnswer(answers[i], p.answer, p)) correct += 1;
     });
     try {
       await onSubmit(correct);
@@ -4470,6 +4553,7 @@ const NotebookPanel = forwardRef(function NotebookPanel(
   }));
 
   const solvedSet = new Set(solvedIds);
+  const answerInputExample = getAnswerInputExample(selectedProblem);
 
   return (
     <section className={`notebook-panel ${mobileSolveOpen ? "" : "mobile-solve-collapsed"}`}>
@@ -4601,7 +4685,7 @@ const NotebookPanel = forwardRef(function NotebookPanel(
             <input
               value={answerInput}
               onChange={(event) => setAnswerInput(event.target.value)}
-              placeholder="정답 입력"
+              placeholder={answerInputExample || "정답 입력"}
               onKeyDown={async (event) => {
                 if (event.key === "Enter" && answerInput.trim()) {
                   const correct = await onAnswerCheck(answerInput);
@@ -4619,6 +4703,7 @@ const NotebookPanel = forwardRef(function NotebookPanel(
             </button>
           </div>
         )}
+        {!(selectedProblem?.choices?.length > 0) && answerInputExample && <small className="answer-example">{answerInputExample}</small>}
         {!(selectedProblem?.choices?.length > 0) && answerCheck?.status === "correct" && <small className="answer-msg correct">✓ 정답입니다!</small>}
         {!(selectedProblem?.choices?.length > 0) && answerCheck?.status === "wrong" && <small className="answer-msg wrong">✗ 오답입니다. 힌트·풀이 방향을 활용하세요.</small>}
       </div>

@@ -121,31 +121,26 @@ export async function loadProgressForUser(uid) {
       result[data.nodeId] = data.solvedProblemIds;
     }
   }
-  const attemptsQuery = query(collection(db, "attempts"), where("uid", "==", uid), limit(500));
-  const attemptsSnap = await getDocs(attemptsQuery);
-  attemptsSnap.docs.forEach((d) => {
-    const data = d.data();
-    if (!data.completed || !data.nodeId || !data.problemId) return;
-    const solved = new Set(result[data.nodeId] || []);
-    solved.add(data.problemId);
-    result[data.nodeId] = Array.from(solved);
-  });
   return result;
 }
 
-export async function loadGuideHelpUsageForUser(uid) {
+export async function loadStudyProgressForUser(uid) {
   const q = query(collection(db, "progress"), where("uid", "==", uid));
   const snap = await getDocs(q);
-  const result = {};
+  const solvedBySkill = {};
+  const guideHelpUsed = {};
   snap.docs.forEach((d) => {
     const data = d.data();
+    if (data.nodeId && data.solvedProblemIds?.length) {
+      solvedBySkill[data.nodeId] = data.solvedProblemIds;
+    }
     const helpUsedByProblem = data.guideHelpUsedByProblem || {};
     Object.entries(helpUsedByProblem).forEach(([problemId, actions]) => {
       if (!problemId || !Array.isArray(actions)) return;
-      result[problemId] = Array.from(new Set(actions.filter(Boolean)));
+      guideHelpUsed[problemId] = Array.from(new Set(actions.filter(Boolean)));
     });
   });
-  return result;
+  return { solvedBySkill, guideHelpUsed };
 }
 
 export async function loadProgressForUsers(userIds) {
@@ -238,11 +233,12 @@ export async function markAiGuideUsed({ uid, problemId }) {
 export async function markGuideHelpUsed({ uid, nodeId, problemId, actionKey }) {
   if (!uid || !nodeId || !problemId || !actionKey) return;
   const ref = doc(db, "progress", `${uid}_${nodeId}`);
-  await setDoc(ref, { uid, nodeId, updatedAt: serverTimestamp() }, { merge: true });
-  await updateDoc(ref, {
+  await setDoc(ref, {
+    uid,
+    nodeId,
     [`guideHelpUsedByProblem.${problemId}`]: arrayUnion(actionKey),
     updatedAt: serverTimestamp(),
-  });
+  }, { merge: true });
 }
 
 export async function completeOnboarding({ user, role, grade }) {
@@ -360,14 +356,8 @@ export async function saveAttempt({ user, problem, strokes, guide, isCorrect, st
   const userRef = doc(db, "users", user.uid);
   const progressRef = doc(db, "progress", `${user.uid}_${problem.nodeId}`);
 
-  // 트랜잭션: 원자 3-way 쓰기 + 서버에서 alreadySolved 검증 (클라이언트 상태 우회 방지)
-  const xpGain = await runTransaction(db, async (transaction) => {
-    const progressSnap = await transaction.get(progressRef);
-    const alreadySolved = (progressSnap.data()?.solvedProblemIds || []).includes(problem.id);
-    const baseXp = completed && !alreadySolved ? 30 + problem.difficulty * 10 : 0;
-    const gain = Math.round(baseXp * Math.min(1, Math.max(0.3, xpMultiplier)));
-
-    transaction.set(attemptRef, {
+  if (wrong && !completed) {
+    await setDoc(attemptRef, {
       uid: user.uid,
       problemId: problem.id,
       nodeId: problem.nodeId,
@@ -377,14 +367,24 @@ export async function saveAttempt({ user, problem, strokes, guide, isCorrect, st
       helpUsed,
       strokes,
       guide,
-      isCorrect: completed && isCorrect,
+      isCorrect: false,
       status,
-      wrong,
-      completed,
-      xpGain: gain,
+      wrong: true,
+      completed: false,
+      xpGain: 0,
       createdAt: serverTimestamp(),
-      completedAt: completed ? serverTimestamp() : null,
+      completedAt: null,
     });
+    return { xpGain: 0 };
+  }
+
+  // 트랜잭션: XP/진행도만 원자적으로 갱신하고 서버에서 alreadySolved를 검증한다.
+  const xpGain = await runTransaction(db, async (transaction) => {
+    const progressSnap = await transaction.get(progressRef);
+    const alreadySolved = (progressSnap.data()?.solvedProblemIds || []).includes(problem.id);
+    if (alreadySolved) return 0;
+    const baseXp = completed && !alreadySolved ? 30 + problem.difficulty * 10 : 0;
+    const gain = Math.round(baseXp * Math.min(1, Math.max(0.3, xpMultiplier)));
 
     transaction.update(userRef, {
       xp: increment(gain),
@@ -412,22 +412,6 @@ export async function saveAttempt({ user, problem, strokes, guide, isCorrect, st
 
     return gain;
   });
-
-  saveAuditLog({
-    user,
-    action: completed ? "problem_completed" : "problem_wrong",
-    category: "learning",
-    message: completed ? "문제 해결 완료" : "오답 제출",
-    metadata: {
-      problemId: problem.id,
-      nodeId: problem.nodeId,
-      problemTitle: problem.title || problem.id,
-      submittedAnswer,
-      status,
-      xpGain,
-      helpUsed,
-    },
-  }).catch((error) => console.error("Audit attempt log failed:", error));
 
   return { xpGain };
 }
