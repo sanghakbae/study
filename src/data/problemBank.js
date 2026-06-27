@@ -1,4 +1,37 @@
 import { curriculumNodes } from "./curriculum.js";
+import { problemsBySkill } from "./curatedProblems.js";
+
+// ── 교과서 기반 정적 문제(권장) ────────────────────────────────────────────────
+// curatedProblems.js 에 해당 스킬의 문제가 있으면 그것을 쓰고, 없으면 아래의
+// 절차적 생성기로 폴백한다. (워크플로로 42개 스킬을 모두 채우면 폴백은 쓰이지 않는다.)
+const FALLBACK_COUNT = 50;
+
+// 스킬별 실제 문제 개수 — 스킬 완료 판정 임계값으로도 쓰인다.
+export function getProblemCountForSkill(skillId) {
+  const curated = problemsBySkill[skillId];
+  return curated && curated.length ? curated.length : FALLBACK_COUNT;
+}
+
+function buildCuratedProblem(skill, raw, n) {
+  const hintText = raw.hint || raw.concept || "";
+  const conceptText = raw.concept || skill.title;
+  return {
+    id: `p-${skill.id}-${String(n).padStart(2, "0")}`,
+    nodeId: skill.id,
+    gradeBand: skill.stage.startsWith("중") ? "middle" : "high",
+    source: "curated",
+    sourceName: "교과서 기반 단원 문제",
+    difficulty: Math.min(5, Math.max(1, Number(raw.difficulty) || 1)),
+    title: raw.title || `${skill.title} ${n}`,
+    prompt: raw.prompt || "",
+    answer: String(raw.answer ?? ""),
+    ...(Array.isArray(raw.choices) && raw.choices.length ? { choices: raw.choices } : {}),
+    concept: conceptText,
+    hint: `## 힌트\n- ${hintText}`,
+    nextStep: `## 다음 한 단계\n- ${hintText}`,
+    conceptGuide: `## 개념 학습\n- ${conceptText}`,
+  };
+}
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 const P = (n, r) => { let v = 1; for (let i = 0; i < r; i++) v *= (n - i); return v; };
@@ -18,7 +51,11 @@ const T = (n, types) => (n - 1) % types;
 
 export function getProblemsForSkill(skill) { return skill ? generateProblemsForSkill(skill) : []; }
 export function generateProblemsForSkill(skill) {
-  return Array.from({ length: 50 }, (_, i) => buildProblem(skill, i + 1));
+  const curated = problemsBySkill[skill.id];
+  if (curated && curated.length) {
+    return curated.map((raw, i) => buildCuratedProblem(skill, raw, i + 1));
+  }
+  return Array.from({ length: FALLBACK_COUNT }, (_, i) => buildProblem(skill, i + 1));
 }
 
 function buildProblem(skill, n) {
@@ -1242,84 +1279,185 @@ function terms(skill) {
   return `- **${skill.title}** — ${skill.unit} 단원의 핵심 개념을 정확한 정의로 다시 확인하세요.`;
 }
 
-function hint(skill, p) {
+function problemGuideMeta(p) {
+  const prompt = String(p.prompt || "");
+  if (p.choices?.length) {
+    return {
+      type: "객관식",
+      start: "선지를 먼저 고르지 말고, 노트에 직접 계산한 값을 만든 뒤 선지와 비교하세요.",
+      check: "계산 결과와 같은 값이 선지에 있는지 보고, 비슷한 오답 선지와 헷갈리지 않았는지 확인하세요.",
+      mistake: "선지를 보고 역으로 끼워 맞추면 부호나 조건을 놓치기 쉽습니다.",
+    };
+  }
+  if (prompt.includes("수직선") || prompt.includes("거리") || prompt.includes("|")) {
+    return {
+      type: "개념 확인",
+      start: "그림이나 수직선이 떠오르는 문제는 먼저 기준점과 방향을 표시하세요.",
+      check: "값이 거리인지 위치인지 구분하고, 거리라면 음수가 나올 수 없는지 확인하세요.",
+      mistake: "절댓값, 거리, 좌표를 같은 의미로 섞어 쓰는 실수를 조심하세요.",
+    };
+  }
+  if (prompt.includes("나열") || prompt.includes("순서")) {
+    return {
+      type: "정렬/비교",
+      start: "비교할 대상을 모두 같은 기준으로 바꾼 뒤 작은 값부터 표시하세요.",
+      check: "음수는 절댓값이 클수록 실제 값은 더 작다는 점을 마지막에 다시 확인하세요.",
+      mistake: "음수의 크기 비교를 양수처럼 처리하는 실수가 자주 나옵니다.",
+    };
+  }
+  if (prompt.includes("방정식") || prompt.includes("x") || prompt.includes("=")) {
+    return {
+      type: "식 세우기",
+      start: "미지수와 상수를 분리하고, 양변에 같은 연산을 적용한다는 원칙을 먼저 적으세요.",
+      check: "구한 값을 원래 식에 대입했을 때 좌변과 우변이 같아지는지 검산하세요.",
+      mistake: "이항할 때 부호가 바뀌는 부분, 양변을 나눌 때 모든 항에 적용하는 부분을 놓치기 쉽습니다.",
+    };
+  }
+  if (prompt.includes("그래프") || prompt.includes("기울기") || prompt.includes("좌표")) {
+    return {
+      type: "그래프/좌표",
+      start: "좌표, 변화량, 기준축을 먼저 분리해서 적고 필요한 값을 표로 정리하세요.",
+      check: "x의 변화량과 y의 변화량을 뒤집지 않았는지, 좌표 순서를 바꾸지 않았는지 확인하세요.",
+      mistake: "x좌표와 y좌표를 바꾸거나 증가량의 부호를 놓치는 실수가 많습니다.",
+    };
+  }
+  return {
+    type: "계산/적용",
+    start: "문제의 조건을 한 줄 식으로 옮기고, 바로 계산하지 말고 먼저 구조를 정리하세요.",
+    check: "중간식마다 바뀐 부분이 하나뿐인지 확인하고, 마지막 답의 형태가 문제 요구와 맞는지 보세요.",
+    mistake: "괄호, 부호, 분모, 단위가 중간 계산에서 빠지는 경우가 많습니다.",
+  };
+}
+
+function workedExample(skill, p, meta) {
+  const sample = getConceptSample(p);
+  const firstAction = p.choices?.length
+    ? "직접 계산한 값을 먼저 만든 뒤, 같은 값을 가진 보기를 고릅니다."
+    : "문제 문장을 식으로 옮기고 왼쪽에서 오른쪽으로 한 단계씩 정리합니다.";
   return [
-    `## 힌트`,
-    `### ${skill.stage} · ${skill.title} (${skill.unit})`,
+    `- **예시 문제:** ${sample.prompt}`,
+    `- **풀이 예시 1:** 주어진 조건과 구해야 할 값을 분리합니다.`,
+    `  - 주어진 조건: \`${sample.given}\``,
+    `  - 구해야 할 값: \`${sample.target}\``,
+    `- **풀이 예시 2:** 사용할 개념을 표시합니다.`,
+    `  - 적용 개념: \`${p.concept}\``,
+    `- **풀이 예시 3:** ${firstAction}`,
+    ...sample.steps.map((step) => `  - ${step}`),
+    `- **풀이 예시 4:** 마지막 줄에 \`${sample.answerLine}\`처럼 결론을 분명히 씁니다.`,
+    `- **검산:** ${meta.check}`,
+  ].join("\n");
+}
+
+function getConceptSample(p) {
+  const concept = String(p.concept || "");
+  if (concept.includes("음수") || concept.includes("부호") || concept.includes("정수") || concept.includes("유리수")) {
+    return {
+      prompt: "(-4) + 7 - (-2)를 계산하시오.",
+      given: "(-4) + 7 - (-2)",
+      target: "식의 값",
+      steps: ["빼기 음수는 더하기 양수로 바꿉니다: `(-4) + 7 + 2`", "왼쪽부터 계산합니다: `-4 + 7 = 3`", "남은 수를 더합니다: `3 + 2 = 5`"],
+      answerLine: "따라서 답은 5",
+    };
+  }
+  if (concept.includes("문자") || concept.includes("계수") || concept.includes("다항식") || concept.includes("식")) {
+    return {
+      prompt: "3x + 2x - 4에서 x의 계수를 구하시오.",
+      given: "3x + 2x - 4",
+      target: "x의 계수",
+      steps: ["x가 붙은 항끼리 모읍니다: `3x + 2x`", "계수끼리 더합니다: `3 + 2 = 5`", "식은 `5x - 4`로 정리됩니다."],
+      answerLine: "따라서 x의 계수는 5",
+    };
+  }
+  if (concept.includes("방정식") || concept.includes("이항")) {
+    return {
+      prompt: "x + 5 = 12일 때 x의 값을 구하시오.",
+      given: "x + 5 = 12",
+      target: "x의 값",
+      steps: ["상수 5를 오른쪽으로 옮깁니다: `x = 12 - 5`", "오른쪽을 계산합니다: `12 - 5 = 7`", "원래 식에 넣어 봅니다: `7 + 5 = 12`"],
+      answerLine: "따라서 x = 7",
+    };
+  }
+  if (concept.includes("그래프") || concept.includes("좌표") || concept.includes("기울기")) {
+    return {
+      prompt: "두 점 (1, 2), (3, 6)을 지나는 직선의 기울기를 구하시오.",
+      given: "(1, 2), (3, 6)",
+      target: "기울기",
+      steps: ["x의 변화량을 구합니다: `3 - 1 = 2`", "y의 변화량을 구합니다: `6 - 2 = 4`", "기울기는 `y의 변화량 / x의 변화량 = 4 / 2 = 2`입니다."],
+      answerLine: "따라서 기울기는 2",
+    };
+  }
+  return {
+    prompt: "한 변의 길이가 6인 정사각형의 둘레를 구하시오.",
+    given: "한 변의 길이 6",
+    target: "정사각형의 둘레",
+    steps: ["정사각형의 둘레 공식은 `한 변 × 4`입니다.", "값을 대입합니다: `6 × 4`", "계산합니다: `6 × 4 = 24`"],
+    answerLine: "따라서 둘레는 24",
+  };
+}
+
+function hint(skill, p) {
+  const meta = problemGuideMeta(p);
+  return [
+    `### 힌트`,
+    `**${skill.stage} · ${skill.title} · ${meta.type}**`,
     ``,
-    `**지금 푸는 문제**`,
-    `> ${p.prompt}`,
+    `- **핵심:** ${p.concept}`,
+    `- **시작:** ${meta.start}`,
+    `- **노트에 먼저 쓸 것:** 주어진 값, 구해야 할 값, 사용할 성질을 세 줄로 분리합니다.`,
+    `- **계산 전 확인:** 부호, 괄호, 분수/소수 형태를 먼저 통일합니다.`,
+    `- **중간 점검:** ${meta.check}`,
+    `- **주의:** ${meta.mistake}`,
     ``,
-    `**핵심 개념**`,
-    `- ${p.concept}`,
-    ``,
-    `**단계별 힌트 — 막힐 때 위에서부터 하나씩만 적용하세요**`,
-    `1. *가벼운 힌트* — 문제가 결국 무엇을 구하라는지 한 문장으로 다시 적어 보세요.`,
-    `2. *방향 힌트* — "주어진 값 → (공식·성질) → 구할 값" 순서로 화살표를 그려 연결해 보세요.`,
-    `3. *결정적 힌트* — 계산 전에 부호( + / − )·괄호·조건부터 정리하고, 답은 미루고 식을 한 줄로 먼저 세워 보세요.`,
-    ``,
-    `**이 유형에서 자주 막히는 지점**`,
-    `- 부호 처리, 괄호 분배, 단위·형태(분수↔소수) 불일치를 특히 조심하세요.`,
-    `- 답의 형태(자연수/분수/소수)를 미리 예상하면 검산이 쉬워집니다.`,
-    ``,
-    `**기억할 용어**`,
-    terms(skill),
+    `답을 바로 맞히려 하지 말고, 첫 번째 중간식만 정확하게 만드는 데 집중하세요.`,
   ].join("\n");
 }
 function next(skill, p) {
+  const meta = problemGuideMeta(p);
   return [
-    `## 풀이 방향`,
-    `### ${skill.stage} · ${skill.title} (${skill.unit})`,
+    `### 풀이 방향`,
+    `**${skill.stage} · ${skill.title}**`,
     ``,
-    `**지금 푸는 문제**`,
-    `> ${p.prompt}`,
+    `1. **문제 해석**: 문제 문장을 식, 조건, 요구값으로 나눕니다.`,
+    `2. **개념 연결**: \`${p.concept}\`을 어디에 쓸지 표시합니다.`,
+    `3. **첫 줄 작성**: ${meta.start}`,
+    `4. **한 단계 계산**: 한 줄에서는 부호 정리, 대입, 이항, 약분 중 하나만 처리합니다.`,
+    `5. **중간식 검토**: 이전 줄과 비교해서 바뀐 부분이 정확히 하나인지 봅니다.`,
+    `6. **답 정리**: 문제에서 요구한 형태로 답을 정리합니다.`,
+    `7. **검산**: ${meta.check}`,
     ``,
-    `**적용 개념**`,
-    `- ${p.concept}`,
-    ``,
-    `**전체 전략 (한눈에)**`,
-    `조건 정리 → 식 세우기 → 한 줄씩 변형 → 답 도출 → 검산`,
-    ``,
-    `**단계별 진행**`,
-    `1. 문제의 식과 조건을 빈 노트에 그대로 다시 옮겨 적습니다.`,
-    `2. 구해야 할 값을 미지수로 두고, 사용할 공식·성질을 식 옆에 메모합니다.`,
-    `3. 값을 대입하거나 항을 정리해서 *첫 번째 중간식*을 만듭니다.`,
-    `4. 한 줄에 한 가지 변화만 주며 식을 차근차근 정리해 갑니다.`,
-    `5. 구한 값을 원래 식·조건에 다시 넣어 검산합니다.`,
-    ``,
-    `**검산·자기 점검**`,
-    `- 부호와 괄호를 다시 확인했나요?`,
-    `- 답의 단위·형태가 문제에서 요구한 것과 같나요?`,
-    `- 다른 방법(대입·그림·표)으로도 같은 답이 나오는지 떠올려 보세요.`,
-    ``,
-    `> 한 번에 답을 내려 하지 말고, 한 줄에 한 가지 변화만 주는 것이 실수를 줄이는 핵심입니다.`,
+    `막히면 지금 쓴 줄에서 바로 다음 변형 하나만 고르세요. 답 전체를 한 번에 만들 필요는 없습니다.`,
   ].join("\n");
 }
 function concept(skill, p) {
+  const meta = problemGuideMeta(p);
   return [
-    `## 개념 보기`,
-    `### ${skill.stage} · ${skill.title} (${skill.unit})`,
-    ``,
-    `**핵심 개념**`,
+    `#### 핵심 개념`,
     `- ${p.concept}`,
+    `- 이 문제 유형은 **${meta.type}** 문제입니다.`,
     ``,
-    `**용어 정리**`,
+    `#### 용어`,
     terms(skill),
     ``,
-    `**기억할 정의·공식**`,
+    `#### 적용 원리`,
     `- 이 단원은 *${skill.unit}* 흐름 안에서 위 개념을 사용합니다.`,
-    `- 공식은 그냥 외우기보다 "왜 그렇게 되는지" 한 문장으로 설명해 보세요.`,
+    `- 공식은 외운 뒤 바로 쓰기보다, 문제 조건이 공식의 어느 자리에 들어가는지 먼저 대응시키세요.`,
+    `- ${meta.start}`,
     ``,
-    `**문제 푸는 순서**`,
+    `#### 예시 풀이`,
+    workedExample(skill, p, meta),
+    ``,
+    `#### 실제 풀이 순서`,
     `1. 조건을 수식으로 옮긴다.`,
-    `2. 알맞은 공식을 적용한다.`,
-    `3. 한 단계씩 차근차근 계산한다.`,
-    `4. 답의 형태와 단위가 맞는지 확인한다.`,
+    `2. 필요한 정의나 공식을 고른다.`,
+    `3. 한 줄에 한 변화만 적용한다.`,
+    `4. 중간식과 원래 조건을 비교한다.`,
+    `5. 답의 형태와 단위가 맞는지 확인한다.`,
     ``,
-    `**자주 하는 실수**`,
-    `- 부호( + / − ) 처리 실수`,
+    `#### 자주 하는 실수`,
+    `- ${meta.mistake}`,
+    `- 부호 처리 실수`,
     `- 괄호 분배 누락`,
-    `- 단위·형태 불일치 (분수↔소수 등)`,
+    `- 답의 형태 불일치`,
   ].join("\n");
 }
 

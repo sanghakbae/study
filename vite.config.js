@@ -5,6 +5,9 @@ import path from "node:path";
 
 export default defineConfig({
   plugins: [react(), localGuideApi()],
+  build: {
+    sourcemap: true,
+  },
   server: {
     port: parseInt(process.env.PORT) || 5173,
     host: "0.0.0.0",
