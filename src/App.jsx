@@ -992,9 +992,10 @@ export default function App() {
 
     let completedSkillReward = null;
     const prevSolved = solvedBySkillRef.current[problem.nodeId] || solvedBySkill[problem.nodeId] || [];
+    const alreadySolved = prevSolved.includes(problem.id);
     const total = getProblemCountForSkill(problem.nodeId);
     const wasComplete = prevSolved.length >= total;
-    const nowComplete = !prevSolved.includes(problem.id) && prevSolved.length + 1 >= total;
+    const nowComplete = !alreadySolved && prevSolved.length + 1 >= total;
     if (nowComplete && !wasComplete) {
       const skill = skills.find((s) => s.id === problem.nodeId) || curriculumNodes.find((s) => s.id === problem.nodeId);
       completedSkillReward = { skill, bonus: skill?.xp || 0 };
@@ -1025,6 +1026,7 @@ export default function App() {
         xpMultiplier,
         submittedAnswer,
         helpUsed,
+        alreadySolved,
       });
       if (result?.xpGain) {
         setProfile((current) => ({

@@ -353,7 +353,7 @@ export async function saveAiUsageLog({ user, problem, action, usage, model }) {
   }).catch((error) => console.error("Audit AI log failed:", error));
 }
 
-export async function saveAttempt({ user, problem, strokes, guide, isCorrect, status, xpMultiplier = 1, submittedAnswer = "", helpUsed = [] }) {
+export async function saveAttempt({ user, problem, strokes, guide, isCorrect, status, xpMultiplier = 1, submittedAnswer = "", helpUsed = [], alreadySolved = false }) {
   const completed = status === "completed";
   const wrong = status === "wrong";
   const attemptRef = doc(collection(db, "attempts"));
@@ -382,22 +382,19 @@ export async function saveAttempt({ user, problem, strokes, guide, isCorrect, st
     return { xpGain: 0 };
   }
 
-  // 트랜잭션: XP/진행도만 원자적으로 갱신하고 서버에서 alreadySolved를 검증한다.
-  const xpGain = await runTransaction(db, async (transaction) => {
-    const progressSnap = await transaction.get(progressRef);
-    const alreadySolved = (progressSnap.data()?.solvedProblemIds || []).includes(problem.id);
-    if (alreadySolved) return 0;
-    const baseXp = completed && !alreadySolved ? 30 + problem.difficulty * 10 : 0;
-    const gain = Math.round(baseXp * Math.min(1, Math.max(0.3, xpMultiplier)));
+  if (alreadySolved) return { xpGain: 0 };
 
-    transaction.update(userRef, {
-      xp: increment(gain),
-      solvedCount: increment(completed && !alreadySolved ? 1 : 0),
+  const baseXp = completed ? 30 + problem.difficulty * 10 : 0;
+  const xpGain = Math.round(baseXp * Math.min(1, Math.max(0.3, xpMultiplier)));
+
+  await Promise.all([
+    updateDoc(userRef, {
+      xp: increment(xpGain),
+      solvedCount: increment(completed ? 1 : 0),
       lastActivityAt: serverTimestamp(),
       ...(completed ? { lastSolvedAt: serverTimestamp() } : {}),
-    });
-
-    transaction.set(
+    }),
+    setDoc(
       progressRef,
       {
         uid: user.uid,
@@ -412,10 +409,8 @@ export async function saveAttempt({ user, problem, strokes, guide, isCorrect, st
           : {}),
       },
       { merge: true },
-    );
-
-    return gain;
-  });
+    ),
+  ]);
 
   return { xpGain };
 }
