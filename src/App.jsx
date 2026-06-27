@@ -243,11 +243,6 @@ function getGuideFallback(actionKey, problem) {
 function chooseProblemId({ problems, savedLocation, skillId, solvedIds = [] }) {
   const solved = new Set(solvedIds);
   const savedProblemId = savedLocation.skillId === skillId ? savedLocation.problemId : "";
-  // 저장된 위치가 아직 안 푼 문제면 그대로 이어서 푼다.
-  if (savedProblemId && problems.some((problem) => problem.id === savedProblemId) && !solved.has(savedProblemId)) {
-    return savedProblemId;
-  }
-  // 그 외에는 앞에서부터 아직 안 푼 첫 문제로 이동한다. (예: 1~3 풀고 멈췄으면 4번)
   const firstUnsolved = problems.find((problem) => !solved.has(problem.id));
   if (firstUnsolved) return firstUnsolved.id;
   // 모두 풀었으면 저장 위치나 첫 문제를 보여준다.
@@ -4550,6 +4545,8 @@ const NotebookPanel = forwardRef(function NotebookPanel(
   }));
 
   const solvedSet = new Set(solvedIds);
+  const selectableProblems = problems.filter((problem) => !solvedSet.has(problem.id));
+  const problemOptions = selectableProblems.length ? selectableProblems : problems;
   const answerInputExample = getAnswerInputExample(selectedProblem);
 
   return (
@@ -4562,9 +4559,9 @@ const NotebookPanel = forwardRef(function NotebookPanel(
         </div>
         <div className="problem-header-actions">
           <select value={selectedProblemId} onChange={(event) => setSelectedProblemId(event.target.value)}>
-            {problems.map((problem) => (
-              <option className={solvedSet.has(problem.id) ? "solved-problem-option" : ""} value={problem.id} key={problem.id}>
-                {solvedSet.has(problem.id) ? `✓ ${problem.title}` : problem.title}
+            {problemOptions.map((problem) => (
+              <option value={problem.id} key={problem.id}>
+                {problem.title}
               </option>
             ))}
           </select>
