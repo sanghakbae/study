@@ -735,22 +735,65 @@ export default function App() {
     });
   }
 
+  // 힌트·풀이 방향·AI 가이드를 모두 /api/guide(OpenAI)로 문제 기준 맞춤 생성한다.
+  // AI 사용 로그도 여기서 남는다.
+  async function runAiGuide(action) {
+    setGuideLoading(true);
+    setGuide(`${action.label} 요청 중...`);
+    try {
+      const canvasImage = notebookRef.current?.exportCanvasImage?.() || null;
+      const response = await fetch("/api/guide", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: action.label,
+          problem: selectedProblem,
+          noteSummary: notebookRef.current?.getStrokeSummary?.() || "",
+          canvasImage,
+        }),
+      });
+      // 일부 환경(특히 iOS Safari)에서는 JSON이 아닌 응답을 response.json()으로 파싱하면
+      // "The string did not match the expected pattern" 예외가 난다. 텍스트로 받아 안전하게 파싱한다.
+      const rawText = await response.text();
+      let data;
+      try {
+        data = JSON.parse(rawText);
+      } catch {
+        throw new Error(
+          response.ok
+            ? "서버 응답을 해석하지 못했습니다. 잠시 후 다시 시도해 주세요."
+            : `요청 실패 (${response.status}). 잠시 후 다시 시도해 주세요.`,
+        );
+      }
+      if (!response.ok) throw new Error(data.error || "OpenAI guide failed");
+      if (data.usage) {
+        await saveAiUsageLog({
+          user,
+          problem: selectedProblem,
+          action: action.label,
+          usage: data.usage,
+          model: data.model,
+        });
+      }
+      setGuide(data.guide);
+    } catch (error) {
+      setGuide(`가이드를 불러오지 못했습니다.\n\n오류: ${error.message}\n\n잠시 후 다시 시도해 주세요.`);
+    } finally {
+      setGuideLoading(false);
+    }
+  }
+
   async function handleGuide(action) {
-    if (action.key === "next") {
-      trackHintUse(selectedProblem.id, action.key);
-      setGuide(getFreshProblemGuide(selectedProblem, "nextStep") || `## 다음 한 단계\n- ${selectedProblem.concept}`);
-      return;
-    }
-
-    if (action.key === "hint") {
-      trackHintUse(selectedProblem.id, action.key);
-      setGuide(getFreshProblemGuide(selectedProblem, "hint") || `## 힌트\n- ${selectedProblem.concept}`);
-      return;
-    }
-
     if (action.key === "concept") {
-      // 개념 학습은 기본 제공이므로 XP 패널티 집계(trackHintUse)에 넣지 않는다.
+      // 개념 학습은 기본 제공(정적)이므로 XP 패널티 집계(trackHintUse)에 넣지 않는다.
       setGuide(getFreshProblemGuide(selectedProblem, "conceptGuide") || `## 개념 학습\n- ${selectedProblem.concept}`);
+      return;
+    }
+
+    // 풀이 방향 / 힌트 받기: 문제 기준으로 AI가 생성 (XP 차감)
+    if (action.key === "next" || action.key === "hint") {
+      trackHintUse(selectedProblem.id, action.key);
+      await runAiGuide(action);
       return;
     }
 
@@ -773,39 +816,7 @@ export default function App() {
       console.error(error);
       setDataWarning(`AI 가이드 사용 기록 저장 실패: ${error.message}`);
     });
-    setGuideLoading(true);
-    setGuide(`${action.label} 요청 중...`);
-    try {
-      const canvasImage = notebookRef.current?.exportCanvasImage?.() || null;
-      const response = await fetch("/api/guide", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: action.label,
-          problem: selectedProblem,
-          noteSummary: notebookRef.current?.getStrokeSummary?.() || "",
-          canvasImage,
-        }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "OpenAI guide failed");
-      if (data.usage) {
-        await saveAiUsageLog({
-          user,
-          problem: selectedProblem,
-          action: action.label,
-          usage: data.usage,
-          model: data.model,
-        });
-      }
-      setGuide(data.guide);
-    } catch (error) {
-      setGuide(
-        `가이드 API 연결 전 임시 안내입니다.\n\n${selectedProblem.concept}\n\n다음 단계: 문제에서 주어진 값과 구해야 할 값을 먼저 분리한 뒤, 가장 직접적인 공식이나 등식으로 옮겨 보세요.\n\n오류: ${error.message}`,
-      );
-    } finally {
-      setGuideLoading(false);
-    }
+    await runAiGuide(action);
   }
 
   function markProblemCompleted(problemId, nodeId = selectedSkillId) {
