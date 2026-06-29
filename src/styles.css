@@ -6617,6 +6617,25 @@ button.stat-pill:hover,
   }
 }
 
+/* iPhone 등 모바일: 페이지 세로 스크롤 허용.
+   전역으로 html/body/#root에 overflow:hidden + height:100%가 걸려 있어,
+   세로로 쌓이는 모바일 레이아웃에서 화면 밖 내용이 잘리고 스크롤이 막히던 문제 수정. */
+@media (max-width: 720px) {
+  html,
+  body,
+  #root {
+    height: auto;
+    min-height: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  body {
+    overscroll-behavior-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
 @media (min-width: 721px) {
   .app-shell:not(.admin-shell):not(.parent-shell) {
     display: flex;
