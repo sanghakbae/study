@@ -4786,6 +4786,25 @@ li:nth-child(3) .rank-num { color: #b45309; }
   }
 }
 
+/* iPad 등 태블릿(721~1024px): 상단바가 화면 폭을 넘겨 오른쪽 버튼이 잘리던 문제 수정.
+   버튼 라벨을 숨기고, 공간이 부족하면 버튼들이 아래 줄로 내려오도록(wrap) 해 항상 보이게 한다. */
+@media (min-width: 721px) and (max-width: 1024px) {
+  .topbar {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+
+  .topbar-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    row-gap: 6px;
+  }
+
+  .topbar-menu-label {
+    display: none;
+  }
+}
+
 @media (max-width: 720px) {
   .topbar-menu-label {
     display: none;

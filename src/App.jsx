@@ -486,6 +486,9 @@ export default function App() {
   const solvedBySkillRef = useRef(solvedBySkill);
   const studyLocationTimerRef = useRef(null);
   const lastProblemLoadKeyRef = useRef("");
+  const selectedProblemIdRef = useRef(defaultProblemId);
+  const pickedForSkillRef = useRef("");
+  const progressReadyRef = useRef(false);
   const deployVersionRef = useRef("");
   const auditLoginRef = useRef("");
   const parentViewAuditRef = useRef("");
@@ -635,17 +638,29 @@ export default function App() {
   }, [solvedBySkill]);
 
   useEffect(() => {
+    selectedProblemIdRef.current = selectedProblemId;
+  }, [selectedProblemId]);
+
+  useEffect(() => {
     if (!user) return;
     const skill = skills.find((s) => s.id === selectedSkillId) || curriculumNodes.find((s) => s.id === selectedSkillId);
     const applyProblems = (items) => {
       const expectedCount = getProblemCountForSkill(selectedSkillId);
       const sourceProblems = items.length >= expectedCount ? items : getFallbackProblems(skill);
       const nextProblems = sortProblemsByNumber(sourceProblems).slice(0, expectedCount);
-      const savedLocation = { skillId: profile.lastSkillId, problemId: profile.lastProblemId };
-      const solvedIds = solvedBySkill[selectedSkillId] || [];
-      const nextProblemId = chooseProblemId({ problems: nextProblems, savedLocation, skillId: selectedSkillId, solvedIds });
       setProblems(nextProblems);
-      setSelectedProblemId(nextProblemId);
+      // 자동 문제 선택은 (1) 스킬이 바뀌었을 때, (2) 진행도가 처음 로드돼 한 번 다시 고를 때,
+      // (3) 현재 선택한 문제가 이 스킬 목록에 없을 때만 한다.
+      // 문제를 풀 때마다(푼 문제 목록 변경) 재선택해서 1번으로 튕기던 버그를 막는다.
+      const pickKey = `${selectedSkillId}|${progressReadyRef.current ? "ready" : "pending"}`;
+      const currentInList = nextProblems.some((problem) => problem.id === selectedProblemIdRef.current);
+      if (pickedForSkillRef.current !== pickKey || !currentInList) {
+        const savedLocation = { skillId: profile.lastSkillId, problemId: profile.lastProblemId };
+        const solvedIds = solvedBySkillRef.current[selectedSkillId] || [];
+        const nextProblemId = chooseProblemId({ problems: nextProblems, savedLocation, skillId: selectedSkillId, solvedIds });
+        setSelectedProblemId(nextProblemId);
+        pickedForSkillRef.current = pickKey;
+      }
     };
     const solvedKey = (solvedBySkill[selectedSkillId] || []).join(",");
     const loadKey = `${selectedSkillId}|${profile.role}|${profile.lastSkillId}|${profile.lastProblemId}|${solvedKey}|${skills.length}`;
@@ -718,6 +733,8 @@ export default function App() {
     if (me) setProfile(me);
     const mergedSolved = mergeSolvedMaps(readSolvedCache(uid), studyProgress.solvedBySkill);
     setSolvedBySkill(mergedSolved);
+    solvedBySkillRef.current = mergedSolved;
+    progressReadyRef.current = true;
     writeSolvedCache(uid, mergedSolved);
     if (uid) {
       setHintUsed((current) => {
@@ -1010,7 +1027,12 @@ export default function App() {
 
   function advanceToNextProblem(completedProblemId, nodeId = selectedSkillId) {
     const solved = new Set([...(solvedBySkillRef.current[nodeId] || solvedBySkill[nodeId] || []), completedProblemId]);
-    const nextProblem = problems.find((problem) => problem.nodeId === nodeId && !solved.has(problem.id));
+    const inSkill = problems.filter((problem) => problem.nodeId === nodeId);
+    const currentIndex = inSkill.findIndex((problem) => problem.id === completedProblemId);
+    // 방금 푼 문제 "다음 번호"부터 안 푼 문제를 찾고, 없으면 앞쪽의 안 푼 문제로 돌아간다.
+    const nextProblem =
+      inSkill.slice(currentIndex + 1).find((problem) => !solved.has(problem.id)) ||
+      inSkill.find((problem) => !solved.has(problem.id));
     if (nextProblem) {
       setSelectedProblemId(nextProblem.id);
       return;
