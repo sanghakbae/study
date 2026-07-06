@@ -6924,6 +6924,51 @@ button.stat-pill:hover,
   }
 }
 
+/* iPad/tablet: let the document own vertical scrolling.
+   Fixed 100dvh containers can trap touch scroll under Safari's browser bars. */
+@media (min-width: 721px) and (max-width: 1180px) {
+  html,
+  body,
+  #root {
+    height: auto !important;
+    min-height: 100% !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    overscroll-behavior-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  body.drawing-on-canvas {
+    overflow: hidden !important;
+  }
+
+  .app-shell {
+    height: auto !important;
+    min-height: 100vh !important;
+    min-height: 100svh !important;
+    min-height: 100dvh !important;
+    overflow-x: hidden !important;
+    overflow-y: visible !important;
+  }
+
+  .admin-layout,
+  .parent-layout,
+  .workspace {
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+
+  .admin-panel,
+  .admin-dashboard {
+    overflow: visible !important;
+  }
+
+  .notebook-panel,
+  .guide-panel {
+    overflow-y: visible !important;
+  }
+}
+
 /* ── Onboarding Guide ── */
 .onboarding-overlay {
   position: fixed;
