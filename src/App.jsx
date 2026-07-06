@@ -103,16 +103,6 @@ const problemLookup = new Map(generatedProblems.map((problem) => [problem.id, pr
 const defaultSkillId = "m1-numbers";
 const defaultProblemId = "p-m1-numbers-01";
 const skillOrder = new Map(curriculumNodes.map((skill, index) => [skill.id, index]));
-const solvedCachePrefix = "study-solved-cache:";
-
-function toMillis(value) {
-  if (!value) return 0;
-  if (typeof value === "number") return value;
-  if (value instanceof Date) return value.getTime();
-  if (typeof value.toMillis === "function") return value.toMillis();
-  if (typeof value.seconds === "number") return value.seconds * 1000 + Math.floor((value.nanoseconds || 0) / 1000000);
-  return 0;
-}
 
 function sortSkillsByCurriculumOrder(skillList = []) {
   return [...skillList].sort((a, b) => {
@@ -121,57 +111,6 @@ function sortSkillsByCurriculumOrder(skillList = []) {
     if (orderA !== orderB) return orderA - orderB;
     return String(a.title || a.id).localeCompare(String(b.title || b.id), "ko");
   });
-}
-
-function mergeSolvedMaps(...maps) {
-  const result = {};
-  for (const map of maps) {
-    Object.entries(map || {}).forEach(([nodeId, problemIds]) => {
-      const solved = new Set(result[nodeId] || []);
-      (Array.isArray(problemIds) ? problemIds : []).forEach((problemId) => solved.add(problemId));
-      result[nodeId] = Array.from(solved);
-    });
-  }
-  return result;
-}
-
-function readSolvedCache(uid, progressResetAt) {
-  if (!uid) return {};
-  try {
-    const cacheKey = `${solvedCachePrefix}${uid}`;
-    const parsed = JSON.parse(localStorage.getItem(cacheKey) || "{}");
-    const resetAt = toMillis(progressResetAt);
-    if (parsed && parsed.__version === 2) {
-      if (resetAt && Number(parsed.resetAt || 0) < resetAt) {
-        localStorage.removeItem(cacheKey);
-        return {};
-      }
-      return parsed.solvedBySkill || {};
-    }
-    if (resetAt) {
-      localStorage.removeItem(cacheKey);
-      return {};
-    }
-    return parsed || {};
-  } catch {
-    return {};
-  }
-}
-
-function writeSolvedCache(uid, solvedMap, progressResetAt) {
-  if (!uid) return;
-  try {
-    localStorage.setItem(
-      `${solvedCachePrefix}${uid}`,
-      JSON.stringify({
-        __version: 2,
-        resetAt: toMillis(progressResetAt),
-        solvedBySkill: solvedMap || {},
-      }),
-    );
-  } catch {
-    // localStorage may be unavailable in private browsing.
-  }
 }
 
 function getSequentialUnlockedSkills(skillList = [], completedSkillIds = []) {
@@ -640,7 +579,8 @@ export default function App() {
               .then(() => markFirstLoginChatNotified(nextUser.uid))
               .catch((error) => console.error("First login notification failed:", error));
           }
-          setSolvedBySkill(readSolvedCache(nextUser.uid, nextProfile.progressResetAt));
+          setSolvedBySkill({});
+          solvedBySkillRef.current = {};
           setSelectedSkillId(nextProfile.lastSkillId || defaultSkillId);
           setSelectedProblemId(nextProfile.lastProblemId || defaultProblemId);
           if (!localStorage.getItem(ONBOARDING_KEY)) {
@@ -785,12 +725,10 @@ export default function App() {
     setLeaderboard(loadedLeaders.filter((u) => u.role === "student" && u.onboardingComplete && !u.isMock));
     let me = loadedLeaders.find((item) => item.uid === uid);
     if (me) setProfile(me);
-    const progressResetAt = me?.progressResetAt || profile.progressResetAt;
-    const mergedSolved = mergeSolvedMaps(readSolvedCache(uid, progressResetAt), studyProgress.solvedBySkill);
+    const mergedSolved = studyProgress.solvedBySkill || {};
     setSolvedBySkill(mergedSolved);
     solvedBySkillRef.current = mergedSolved;
     progressReadyRef.current = true;
-    writeSolvedCache(uid, mergedSolved, progressResetAt);
     if (uid) {
       setHintUsed((current) => {
         const merged = { ...studyProgress.guideHelpUsed };
@@ -1075,7 +1013,6 @@ export default function App() {
       const solved = new Set(current[nodeId] || []);
       solved.add(problemId);
       const next = { ...current, [nodeId]: Array.from(solved) };
-      writeSolvedCache(user?.uid, next, profile.progressResetAt);
       return next;
     });
   }
