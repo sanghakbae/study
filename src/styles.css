@@ -2079,27 +2079,6 @@ button.stat-pill:hover {
   letter-spacing: 0 !important;
 }
 
-.problem-timer {
-  font-size: 0.72rem !important;
-  font-weight: 900 !important;
-  color: #0f766e !important;
-  background: rgba(20, 184, 166, 0.12);
-  padding: 2px 8px;
-  border-radius: 5px;
-  letter-spacing: 0 !important;
-  white-space: nowrap;
-}
-
-.problem-timer.warning {
-  color: #b45309 !important;
-  background: rgba(245, 158, 11, 0.14);
-}
-
-.problem-timer.danger {
-  color: #b91c1c !important;
-  background: rgba(239, 68, 68, 0.14);
-}
-
 .leader-list {
   list-style: none;
   display: grid;

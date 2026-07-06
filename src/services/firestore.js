@@ -1,5 +1,7 @@
 import {
   collection,
+  deleteDoc,
+  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -167,9 +169,13 @@ export async function loadUsers() {
 }
 
 export async function clearUserProgress(uid) {
-  const q = query(collection(db, "progress"), where("uid", "==", uid));
-  const snap = await getDocs(q);
-  await Promise.all(snap.docs.map((d) => setDoc(d.ref, { uid, nodeId: d.data().nodeId, solvedProblemIds: [], completedCount: 0, updatedAt: serverTimestamp() }, { merge: false })));
+  const progressQuery = query(collection(db, "progress"), where("uid", "==", uid));
+  const attemptsQuery = query(collection(db, "attempts"), where("uid", "==", uid));
+  const [progressSnap, attemptsSnap] = await Promise.all([getDocs(progressQuery), getDocs(attemptsQuery)]);
+  await Promise.all([
+    ...progressSnap.docs.map((d) => deleteDoc(d.ref)),
+    ...attemptsSnap.docs.map((d) => deleteDoc(d.ref)),
+  ]);
 }
 
 export async function updateUserRole({ uid, role, parentOf = [], displayName, grade, xp, solvedCount, onboardingComplete, resetProgress }) {
@@ -184,6 +190,14 @@ export async function updateUserRole({ uid, role, parentOf = [], displayName, gr
     ...(xp != null ? { xp: Number(xp) || 0 } : {}),
     ...(solvedCount != null ? { solvedCount: Number(solvedCount) || 0 } : {}),
     ...(onboardingComplete != null ? { onboardingComplete } : {}),
+    ...(resetProgress
+      ? {
+          progressResetAt: serverTimestamp(),
+          lastSkillId: deleteField(),
+          lastProblemId: deleteField(),
+          lastSolvedAt: deleteField(),
+        }
+      : {}),
     updatedAt: serverTimestamp(),
   });
 }
