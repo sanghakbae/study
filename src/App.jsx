@@ -1102,7 +1102,7 @@ export default function App() {
 
     let completedSkillReward = null;
     const prevSolved = solvedBySkillRef.current[problem.nodeId] || solvedBySkill[problem.nodeId] || [];
-    const alreadySolved = prevSolved.includes(problem.id);
+    const alreadySolved = isProblemSolved(problem, prevSolved);
     const total = getProblemCountForSkill(problem.nodeId);
     const wasComplete = prevSolved.length >= total;
     const nowComplete = !alreadySolved && prevSolved.length + 1 >= total;
@@ -1110,9 +1110,6 @@ export default function App() {
       const skill = skills.find((s) => s.id === problem.nodeId) || curriculumNodes.find((s) => s.id === problem.nodeId);
       completedSkillReward = { skill, bonus: skill?.xp || 0 };
     }
-
-    markProblemCompleted(problem.id, problem.nodeId);
-    advanceToNextProblem(problem.id, problem.nodeId);
 
     const savingKey = `${user.uid}_${problem.id}`;
     if (savingProblemIdsRef.current.has(savingKey)) return;
@@ -1145,6 +1142,8 @@ export default function App() {
           solvedCount: (Number(current.solvedCount) || 0) + 1,
         }));
       }
+      markProblemCompleted(problem.id, problem.nodeId);
+      advanceToNextProblem(problem.id, problem.nodeId);
       if (completedSkillReward) {
         setAcquiredSkill(completedSkillReward);
         if (completedSkillReward.bonus) {
