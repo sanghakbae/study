@@ -4603,6 +4603,7 @@ const NotebookPanel = forwardRef(function NotebookPanel(
 
   const problemOptions = problems;
   const answerInputExample = getAnswerInputExample(selectedProblem);
+  const getProblemLabel = (problem) => `${getProblemOrder(problem)}번`;
 
   return (
     <section className={`notebook-panel ${mobileSolveOpen ? "" : "mobile-solve-collapsed"}`}>
@@ -4616,7 +4617,7 @@ const NotebookPanel = forwardRef(function NotebookPanel(
           <select value={selectedProblemId} onChange={(event) => setSelectedProblemId(event.target.value)}>
             {problemOptions.map((problem) => (
               <option value={problem.id} key={problem.id}>
-                {problem.title}
+                {getProblemLabel(problem)}
               </option>
             ))}
           </select>
