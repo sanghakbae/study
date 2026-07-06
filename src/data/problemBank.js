@@ -4,12 +4,20 @@ import { problemsBySkill } from "./curatedProblems.js";
 // ── 교과서 기반 정적 문제(권장) ────────────────────────────────────────────────
 // curatedProblems.js 에 해당 스킬의 문제가 있으면 그것을 쓰고, 없으면 아래의
 // 절차적 생성기로 폴백한다. (워크플로로 42개 스킬을 모두 채우면 폴백은 쓰이지 않는다.)
-const FALLBACK_COUNT = 50;
+const FALLBACK_COUNT = 10;
+const FALLBACK_SCAN_COUNT = 80;
+const FALLBACK_CANDIDATE_NUMBERS = [
+  1, 12, 23, 34, 45, 6, 17, 28, 39, 50,
+  ...Array.from({ length: FALLBACK_SCAN_COUNT }, (_, i) => i + 1),
+];
+const fallbackProblemCache = new Map();
 
 // 스킬별 실제 문제 개수 — 스킬 완료 판정 임계값으로도 쓰인다.
 export function getProblemCountForSkill(skillId) {
   const curated = problemsBySkill[skillId];
-  return curated && curated.length ? curated.length : FALLBACK_COUNT;
+  if (curated && curated.length) return curated.length;
+  const skill = curriculumNodes.find((node) => node.id === skillId);
+  return skill ? generateUniqueFallbackProblems(skill).length : FALLBACK_COUNT;
 }
 
 function buildCuratedProblem(skill, raw, n) {
@@ -40,6 +48,13 @@ const C = (n, r) => P(n, r) / fact(r);
 const gcd = (a, b) => b === 0 ? Math.abs(a) : gcd(b, a % b);
 const frac = (a, b) => { const d = gcd(a, b); return b / d === 1 ? String(a / d) : `${a / d}/${b / d}`; };
 const sg = (v) => v === 0 ? "" : v > 0 ? `+ ${v}` : `- ${Math.abs(v)}`;
+const xTerm = (coef) => coef === 0 ? "" : coef === 1 ? "x" : coef === -1 ? "-x" : `${coef}x`;
+const linear = (coef, con = 0) => {
+  if (coef === 0) return String(con);
+  const first = xTerm(coef);
+  if (con === 0) return first;
+  return `${first} ${con > 0 ? `+ ${con}` : `- ${Math.abs(con)}`}`;
+};
 const hsh = (s) => { let h = 0; for (const c of s) h = (Math.imul(31, h) + c.charCodeAt(0)) | 0; return Math.abs(h); };
 const mc = (correct, wrongs, concept) => {
   const all = [correct, ...wrongs.slice(0, 4)];
@@ -55,22 +70,45 @@ export function generateProblemsForSkill(skill) {
   if (curated && curated.length) {
     return curated.map((raw, i) => buildCuratedProblem(skill, raw, i + 1));
   }
-  return Array.from({ length: FALLBACK_COUNT }, (_, i) => buildProblem(skill, i + 1));
+  return generateUniqueFallbackProblems(skill);
 }
 
-function buildProblem(skill, n) {
+function getProblemPattern(prompt) {
+  return String(prompt || "")
+    .replace(/-?\d+(?:\.\d+)?/g, "#")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function generateUniqueFallbackProblems(skill) {
+  if (fallbackProblemCache.has(skill.id)) return fallbackProblemCache.get(skill.id);
+  const picked = [];
+  const patterns = new Set();
+  for (const sourceNumber of FALLBACK_CANDIDATE_NUMBERS) {
+    if (picked.length >= FALLBACK_COUNT) break;
+    const problem = buildProblem(skill, sourceNumber, picked.length + 1);
+    const pattern = getProblemPattern(problem.prompt);
+    if (patterns.has(pattern)) continue;
+    patterns.add(pattern);
+    picked.push(problem);
+  }
+  fallbackProblemCache.set(skill.id, picked);
+  return picked;
+}
+
+function buildProblem(skill, sourceNumber, displayNumber = sourceNumber) {
   const builder = getBuilder(skill);
-  const built = builder(skill, n);
+  const built = builder(skill, sourceNumber);
   // 힌트·풀이 방향·개념 보기 텍스트는 실제로 그 문제를 열 때만 만들면 되므로
   // getter로 지연 생성한다. (시작 시 2100문제 × 3개 문자열을 미리 만들지 않아 첫 화면이 빨리 뜬다.)
   return {
-    id: `p-${skill.id}-${String(n).padStart(2, "0")}`,
+    id: `p-${skill.id}-${String(sourceNumber).padStart(2, "0")}`,
     nodeId: skill.id,
     gradeBand: skill.stage.startsWith("중") ? "middle" : "high",
     source: "built-in",
     sourceName: "내장 단원 문제은행",
-    difficulty: Math.min(5, 1 + Math.floor((n - 1) / 12)),
-    title: `${skill.title} ${n}`,
+    difficulty: Math.min(5, 1 + Math.floor((sourceNumber - 1) / 10)),
+    title: `${skill.title} ${sourceNumber}`,
     ...built,
     get hint() { return hint(skill, built); },
     get nextStep() { return next(skill, built); },
@@ -105,7 +143,7 @@ function getBuilder(skill) {
 // ══ 중1 ═══════════════════════════════════════════════════════════════════════
 
 function m1Numbers(_, n) {
-  const t = T(n, 5);
+  const t = T(n, 10);
   const a = (n % 8) + 2, b = (n % 7) + 1, c = (n % 5) + 1;
   if (t === 0) {
     const ans = String(-a + b + c);
@@ -146,7 +184,7 @@ function m1Numbers(_, n) {
       ? { prompt: `${v}는 어떤 수인가?`, ...mc(ans, ["양수", "음수", "0", "자연수"].filter(s => s !== ans), "음수, 0, 양수로 수를 분류한다."), solve }
       : { prompt: `${v}는 양수, 음수, 0 중 어느 것인가?`, answer: ans, concept: "음수 < 0 < 양수 순서로 수직선에 배열된다.", solve };
   }
-  // t === 4
+  if (t === 4) {
   const nums = [-(a), b, -(c), (n % 4) + 1];
   const sorted = [...nums].sort((x, y) => x - y);
   return { prompt: `다음 수를 작은 것부터 순서대로 나열하시오. ${nums.join(", ")}`, answer: sorted.join(", "), concept: "음수는 절댓값이 클수록 더 작다.", solve: [
@@ -154,34 +192,105 @@ function m1Numbers(_, n) {
     `0과 양수, 음수를 함께 크기 비교합니다.`,
     `작은 것부터 나열하면 \`${sorted.join(", ")}\`입니다.`,
   ] };
+  }
+  if (t === 5) {
+    const left = -a - b;
+    const right = c - a;
+    const ans = left < right ? "<" : left > right ? ">" : "=";
+    return { prompt: `${left}와 ${right}의 크기를 비교하여 <, >, = 중 하나를 쓰시오.`, answer: ans, concept: "수직선에서 오른쪽에 있는 수가 더 크다.", solve: [
+      `수직선에서 ${left}와 ${right}의 위치를 비교합니다.`,
+      `${left} ${ans} ${right} 이므로 답은 ${ans}입니다.`,
+    ] };
+  }
+  if (t === 6) {
+    const loss = (n % 6) + 2;
+    const gain = (n % 5) + 4;
+    const start = (n % 4) - 3;
+    const ans = start - loss + gain;
+    return { prompt: `처음 온도가 ${start}°C였다. ${loss}°C 내려간 뒤 ${gain}°C 올라가면 최종 온도는?`, answer: String(ans), concept: "증가와 감소를 양수와 음수의 덧셈으로 나타낸다.", solve: [
+      `내려간 것은 빼고, 올라간 것은 더합니다: \`${start} - ${loss} + ${gain}\``,
+      `계산하면 \`${ans}\`이므로 최종 온도는 ${ans}°C입니다.`,
+    ] };
+  }
+  if (t === 7) {
+    const amount = (n % 8) + 3;
+    const ans = -amount;
+    return { prompt: `수입 ${amount}를 +${amount}로 나타낼 때, 지출 ${amount}는 어떻게 나타내는가?`, answer: String(ans), concept: "서로 반대되는 양은 부호를 반대로 붙인다.", solve: [
+      `수입을 양수로 나타내면 지출은 반대 방향이므로 음수로 나타냅니다.`,
+      `따라서 지출 ${amount}는 ${ans}입니다.`,
+    ] };
+  }
+  if (t === 8) {
+    const val = -((n % 6) + 2);
+    const ans = -val;
+    return { prompt: `${val}의 반대수를 구하시오.`, answer: String(ans), concept: "반대수는 두 수의 합이 0이 되는 수이다.", solve: [
+      `${val}와 더해서 0이 되는 수를 찾습니다.`,
+      `\`${val} + ${ans} = 0\`이므로 반대수는 ${ans}입니다.`,
+    ] };
+  }
+  const p = (n % 5) + 1;
+  const q = p + (n % 4) + 2;
+  const ans = q - p + 1;
+  return { prompt: `${p} 이상 ${q} 이하인 정수는 모두 몇 개인가?`, answer: String(ans), concept: "이상/이하는 양끝 값을 포함한다.", solve: [
+    `이상과 이하는 양끝 값을 모두 포함합니다.`,
+    `개수는 \`${q} - ${p} + 1 = ${ans}\`입니다.`,
+  ] };
 }
 
 function m1Expr(_, n) {
-  const t = T(n, 4);
-  const a = (n % 5) + 2, b = (n % 7) + 1, c = (n % 4) + 1, x0 = (n % 5) + 1;
+  const t = T(n, 10);
+  const tier = Math.floor((n - 1) / 10);
+  const a = (n % 5) + 2 + tier;
+  const b = (n % 7) + 1 + tier;
+  const c = (n % 4) + 1 + Math.floor(tier / 2);
+  const d = (n % 6) + 2;
+  const x0 = (n % 5) + 1 + (tier >= 3 ? -3 : 0);
+  const y0 = (n % 4) + 2;
   if (t === 0) {
-    const coef = a - c, con = a * b;
-    const ans = coef === 0 ? String(con) : `${coef}x + ${con}`;
-    const solve = [
-      `분배법칙으로 괄호를 풉니다: \`${a}(x + ${b}) = ${a}x + ${con}\``,
-      `식 전체는 \`${a}x + ${con} - ${c}x\`가 됩니다.`,
-      `x항끼리 모읍니다: \`(${a} - ${c})x = ${coef}x\``,
-      `정리하면 \`${ans}\`입니다.`,
-    ];
-    return isMC(n)
-      ? { prompt: `${a}(x + ${b}) - ${c}x를 간단히 하면?`, ...mc(ans, [`${a}x + ${con}`, `${coef + 1}x + ${con}`, `${coef}x + ${b}`, `${a}x + ${b}`], "분배법칙 적용 후 동류항 정리"), solve }
-      : { prompt: `${a}(x + ${b}) - ${c}x를 간단히 하시오.`, answer: ans, concept: "분배법칙을 적용한 뒤 동류항끼리 모은다.", solve };
+    if (tier <= 1) {
+      const coef = a - c, con = a * b;
+      const ans = linear(coef, con);
+      const solve = [
+        `분배법칙으로 괄호를 풉니다: \`${a}(x + ${b}) = ${a}x + ${con}\``,
+        `식 전체는 \`${a}x + ${con} - ${c}x\`가 됩니다.`,
+        `x항끼리 모으면 \`${ans}\`입니다.`,
+      ];
+      return isMC(n)
+        ? { prompt: `${a}(x + ${b}) - ${c}x를 간단히 하면?`, ...mc(ans, [linear(a, con), linear(coef + 1, con), linear(coef, b), linear(a, b)], "분배법칙 적용 후 동류항 정리"), solve }
+        : { prompt: `${a}(x + ${b}) - ${c}x를 간단히 하시오.`, answer: ans, concept: "분배법칙을 적용한 뒤 동류항끼리 모은다.", solve };
+    }
+    const coef = a - c;
+    const con = a * b - c * d;
+    const ans = linear(coef, con);
+    return { prompt: `${a}(x + ${b}) - ${c}(x + ${d})를 간단히 하시오.`, answer: ans, concept: "두 괄호를 각각 전개한 뒤 동류항을 정리한다.", solve: [
+      `각 괄호를 전개합니다: \`${a}x + ${a * b} - ${c}x - ${c * d}\``,
+      `x항은 \`${a}x - ${c}x = ${coef}x\`, 상수항은 \`${a * b} - ${c * d} = ${con}\`입니다.`,
+      `따라서 \`${ans}\`입니다.`,
+    ] };
   }
   if (t === 1) {
-    const val = a * x0 + b;
-    return { prompt: `x = ${x0}일 때 ${a}x + ${b}의 값을 구하시오.`, answer: String(val), concept: "대입: 문자 자리에 주어진 수를 넣어 계산한다.", solve: [
-      `x 자리에 ${x0}을 대입합니다: \`${a}×${x0} + ${b}\``,
-      `곱셈을 먼저 합니다: \`${a}×${x0} = ${a * x0}\``,
-      `상수를 더합니다: \`${a * x0} + ${b} = ${val}\``,
+    if (tier <= 1) {
+      const val = a * x0 + b;
+      return { prompt: `x = ${x0}일 때 ${a}x + ${b}의 값을 구하시오.`, answer: String(val), concept: "대입: 문자 자리에 주어진 수를 넣어 계산한다.", solve: [
+        `x 자리에 ${x0}을 대입합니다: \`${a}×${x0} + ${b}\``,
+        `계산하면 \`${val}\`입니다.`,
+      ] };
+    }
+    const val = a * (x0 - b) + c * y0;
+    return { prompt: `x = ${x0}, y = ${y0}일 때 ${a}(x - ${b}) + ${c}y의 값을 구하시오.`, answer: String(val), concept: "두 문자에 값을 각각 대입하고 괄호 안부터 계산한다.", solve: [
+      `x와 y를 각각 대입합니다: \`${a}(${x0} - ${b}) + ${c}×${y0}\``,
+      `괄호와 곱셈을 계산하면 \`${val}\`입니다.`,
     ] };
   }
   if (t === 2) {
     const m = (n % 4) + 2, k = (n % 3) + 1;
+    if (tier >= 3) {
+      const ans = String(m + k - a);
+      return { prompt: `다항식 ${m}x² + ${k}xy - ${a}에서 x²의 계수와 xy의 계수와 상수항의 합을 구하시오.`, answer: ans, concept: "각 항의 계수와 상수항을 정확히 구분한다.", solve: [
+        `x²의 계수는 ${m}, xy의 계수는 ${k}, 상수항은 -${a}입니다.`,
+        `합은 \`${m} + ${k} + (-${a}) = ${ans}\`입니다.`,
+      ] };
+    }
     return isMC(n)
       ? { prompt: `단항식 ${m}a²b에서 차수는?`, ...mc("3", ["2", "1", "4", "5"], "단항식의 차수는 각 문자 지수의 합이다."), solve: [
         `단항식의 차수는 각 문자 지수의 합입니다.`,
@@ -193,17 +302,112 @@ function m1Expr(_, n) {
         `두 값을 더합니다: \`${m} + (-${a}) = ${m - a}\``,
       ] };
   }
-  // t === 3
-  const lhs = a * x0 + b, rhs = c * x0 - (n % 3);
-  return { prompt: `${a}x + ${b}에서 x항과 상수항을 구분하시오.`, answer: `x항: ${a}x, 상수항: ${b}`, concept: "x를 포함한 항과 수만 있는 상수항을 구분한다.", solve: [
-    `x를 포함한 항이 x항, 수만 있는 항이 상수항입니다.`,
-    `\`${a}x\`는 x를 포함하므로 x항, \`${b}\`는 수뿐이므로 상수항입니다.`,
-    `따라서 x항: ${a}x, 상수항: ${b}입니다.`,
+  if (t === 3) {
+    if (tier >= 2) {
+      return { prompt: `${a}x - ${b} + ${c}y에서 x항, y항, 상수항을 구분하시오.`, answer: `x항: ${a}x, y항: ${c}y, 상수항: -${b}`, concept: "문자가 다른 항은 서로 다른 종류의 항이다.", solve: [
+        `x를 포함한 항은 ${a}x, y를 포함한 항은 ${c}y입니다.`,
+        `문자가 없는 항은 -${b}입니다.`,
+      ] };
+    }
+    return { prompt: `${a}x + ${b}에서 x항과 상수항을 구분하시오.`, answer: `x항: ${a}x, 상수항: ${b}`, concept: "x를 포함한 항과 수만 있는 상수항을 구분한다.", solve: [
+      `x를 포함한 항이 x항, 수만 있는 항이 상수항입니다.`,
+      `\`${a}x\`는 x를 포함하므로 x항, \`${b}\`는 수뿐이므로 상수항입니다.`,
+      `따라서 x항: ${a}x, 상수항: ${b}입니다.`,
+    ] };
+  }
+  if (t === 4) {
+    const ans = tier >= 3
+      ? `${xTerm(a + c)} ${b - d >= 0 ? `+ ${b - d}y` : `- ${Math.abs(b - d)}y`} ${c >= 0 ? `+ ${c}` : `- ${Math.abs(c)}`}`
+      : linear(a + c, b);
+    if (tier >= 3) {
+      return { prompt: `${a}x + ${b}y + ${c}x - ${d}y + ${c}를 동류항끼리 정리하시오.`, answer: ans, concept: "x항, y항, 상수항을 따로 모은다.", solve: [
+        `x항: \`${a}x + ${c}x = ${a + c}x\``,
+        `y항: \`${b}y - ${d}y = ${b - d}y\``,
+        `상수항 ${c}를 붙이면 \`${ans}\`입니다.`,
+      ] };
+    }
+    return { prompt: `${a}x + ${b} + ${c}x를 동류항끼리 정리하시오.`, answer: ans, concept: "문자와 차수가 같은 항끼리만 더할 수 있다.", solve: [
+      `x항끼리 더합니다: \`${a}x + ${c}x = ${a + c}x\``,
+      `상수항 ${b}는 그대로 둡니다.`,
+      `따라서 \`${ans}\`입니다.`,
+    ] };
+  }
+  if (t === 5) {
+    if (tier >= 2) {
+      const ans = `${a}(x + ${b}) - ${c}`;
+      return { prompt: `"어떤 수 x에 ${b}를 더한 값의 ${a}배에서 ${c}를 뺀 식"을 문자식으로 나타내시오.`, answer: ans, concept: "말의 순서를 괄호로 정확히 나타낸다.", solve: [
+        `x에 ${b}를 더한 값은 \`x + ${b}\`입니다.`,
+        `그 ${a}배에서 ${c}를 빼면 \`${ans}\`입니다.`,
+      ] };
+    }
+    const ans = `${a}x - ${b}`;
+    return { prompt: `"어떤 수 x의 ${a}배에서 ${b}를 뺀 식"을 문자식으로 나타내시오.`, answer: ans, concept: "말로 된 관계를 곱셈과 덧셈/뺄셈 기호로 옮긴다.", solve: [
+      `x의 ${a}배는 \`${a}x\`입니다.`,
+      `${b}를 빼므로 \`${a}x - ${b}\`입니다.`,
+    ] };
+  }
+  if (t === 6) {
+    if (tier >= 2) {
+      const ans = linear(2 * (a + c), 2 * b);
+      return { prompt: `가로가 ${a}x + ${b}, 세로가 ${c}x인 직사각형의 둘레를 문자식으로 나타내시오.`, answer: ans, concept: "직사각형의 둘레 = 2×(가로+세로)", solve: [
+        `가로+세로는 \`${a}x + ${b} + ${c}x = ${a + c}x + ${b}\`입니다.`,
+        `둘레는 두 배이므로 \`${ans}\`입니다.`,
+      ] };
+    }
+    const ans = linear(a * b, 0);
+    return { prompt: `가로가 ${a}x, 세로가 ${b}인 직사각형의 넓이를 문자식으로 나타내시오.`, answer: ans, concept: "직사각형의 넓이 = 가로 × 세로", solve: [
+      `넓이는 가로 × 세로입니다.`,
+      `\`${a}x × ${b} = ${a * b}x\`이므로 넓이는 ${ans}입니다.`,
+    ] };
+  }
+  if (t === 7) {
+    if (tier >= 2) {
+      const ans = `${a}x + ${b}y - ${c}`;
+      return { prompt: `한 개에 ${a}원인 물건 x개와 ${b}원인 물건 y개를 사고 ${c}원을 할인받았다. 총액을 문자식으로 나타내시오.`, answer: ans, concept: "총액에서 할인 금액을 뺀다.", solve: [
+        `할인 전 금액은 \`${a}x + ${b}y\`입니다.`,
+        `${c}원을 할인받으므로 \`${ans}\`입니다.`,
+      ] };
+    }
+    const ans = `${a}x + ${b}y`;
+    return { prompt: `한 개에 ${a}원인 물건 x개와 한 개에 ${b}원인 물건 y개의 총액을 문자식으로 나타내시오.`, answer: ans, concept: "각 물건의 금액을 곱해 더한다.", solve: [
+      `첫 물건의 금액은 \`${a}x\`, 두 번째 물건의 금액은 \`${b}y\`입니다.`,
+      `총액은 두 금액의 합이므로 \`${ans}\`입니다.`,
+    ] };
+  }
+  if (t === 8) {
+    if (tier >= 3) {
+      const coef = a + c - d;
+      const con = b + c * 2;
+      const ans = linear(coef, con);
+      return { prompt: `(${a}x + ${b}) + ${c}(x + 2) - ${d}x를 간단히 하시오.`, answer: ans, concept: "여러 항을 전개한 뒤 x항과 상수항을 모은다.", solve: [
+        `분배하면 \`${a}x + ${b} + ${c}x + ${c * 2} - ${d}x\`입니다.`,
+        `x항은 \`${coef}x\`, 상수항은 ${con}이므로 \`${ans}\`입니다.`,
+      ] };
+    }
+    const ans = linear(a + c, b + c);
+    return { prompt: `(${a}x + ${b}) + ${c}(x + 1)을 간단히 하시오.`, answer: ans, concept: "분배법칙과 동류항 정리를 함께 사용한다.", solve: [
+      `먼저 분배합니다: \`${c}(x + 1) = ${c}x + ${c}\``,
+      `전체 식은 \`${a}x + ${b} + ${c}x + ${c}\`입니다.`,
+      `동류항을 모으면 \`${ans}\`입니다.`,
+    ] };
+  }
+  if (tier >= 3) {
+    const ans = a * (x0 + b) - c * (x0 - d);
+    return { prompt: `x = ${x0}일 때 ${a}(x + ${b}) - ${c}(x - ${d})의 값을 구하시오.`, answer: String(ans), concept: "음수 대입과 괄호 계산을 차례로 처리한다.", solve: [
+      `x 자리에 ${x0}을 대입합니다.`,
+      `\`${a}(${x0} + ${b}) - ${c}(${x0} - ${d}) = ${ans}\`입니다.`,
+    ] };
+  }
+  const ans = a * (x0 + b) - c;
+  return { prompt: `x = ${x0}일 때 ${a}(x + ${b}) - ${c}의 값을 구하시오.`, answer: String(ans), concept: "대입한 뒤 괄호 안부터 계산한다.", solve: [
+    `x 자리에 ${x0}을 대입합니다: \`${a}(${x0} + ${b}) - ${c}\``,
+    `괄호 안을 먼저 계산합니다: \`${x0} + ${b} = ${x0 + b}\``,
+    `\`${a} × ${x0 + b} - ${c} = ${ans}\`입니다.`,
   ] };
 }
 
 function m1Eq(_, n) {
-  const t = T(n, 5);
+  const t = T(n, 10);
   const a = (n % 6) + 2, x = (n % 7) + 1, b = (n % 9) + 2;
   if (t === 0) {
     const c = a * x - b;
@@ -248,17 +452,55 @@ function m1Eq(_, n) {
         `${m}x를 지우면 \`${m * x} + b = ${m * x + b}\`, 따라서 \`b = ${m * x + b} - ${m * x} = ${b}\``,
       ] };
   }
-  // t === 4: 가격 문제
+  if (t === 4) {
   const price = (n % 6 + 2) * 100, qty = (n % 4) + 2;
   return { prompt: `한 개에 ${price}원인 물건을 ${qty}개 사면 총 얼마인가?`, answer: String(price * qty), concept: "총액 = 단가 × 개수", solve: [
     `총액은 (단가) × (개수)로 구합니다.`,
     `\`${price} × ${qty} = ${price * qty}\``,
     `따라서 총 ${price * qty}원입니다.`,
   ] };
+  }
+  if (t === 5) {
+    const rhs = a * x + b;
+    return { prompt: `${a}x + ${b} = ${rhs}를 풀면 x는?`, answer: String(x), concept: "상수항을 이항한 뒤 계수로 나눈다.", solve: [
+      `양변에서 ${b}를 뺍니다: \`${a}x = ${rhs - b}\``,
+      `양변을 ${a}로 나눕니다: \`x = ${x}\``,
+    ] };
+  }
+  if (t === 6) {
+    const left = a * x;
+    const rhs = left + b;
+    return { prompt: `${a}x = ${rhs} - ${b}를 만족하는 x를 구하시오.`, answer: String(x), concept: "우변을 먼저 계산한 뒤 일차방정식을 푼다.", solve: [
+      `우변을 계산합니다: \`${rhs} - ${b} = ${left}\``,
+      `\`${a}x = ${left}\`이므로 \`x = ${left} ÷ ${a} = ${x}\`입니다.`,
+    ] };
+  }
+  if (t === 7) {
+    const total = a * x + b;
+    return { prompt: `공책 x권과 연필 ${b}개를 샀다. 공책 한 권이 ${a}원이고 총액이 ${total}원이면 x는?`, answer: String(x), concept: "상황을 일차방정식으로 세워 해결한다.", solve: [
+      `공책값은 \`${a}x\`, 연필값은 ${b}원입니다.`,
+      `방정식은 \`${a}x + ${b} = ${total}\`입니다.`,
+      `풀면 \`x = ${x}\`입니다.`,
+    ] };
+  }
+  if (t === 8) {
+    const add = (n % 5) + 2;
+    const total = x + add;
+    return { prompt: `어떤 수 x에 ${add}를 더하면 ${total}이다. x를 구하시오.`, answer: String(x), concept: "덧셈 관계는 반대로 빼서 구한다.", solve: [
+      `방정식은 \`x + ${add} = ${total}\`입니다.`,
+      `양변에서 ${add}를 빼면 \`x = ${total - add}\`입니다.`,
+    ] };
+  }
+  const sub = (n % 4) + 1;
+  const total = x - sub;
+  return { prompt: `어떤 수 x에서 ${sub}를 빼면 ${total}이다. x를 구하시오.`, answer: String(x), concept: "뺄셈 관계는 반대로 더해서 구한다.", solve: [
+    `방정식은 \`x - ${sub} = ${total}\`입니다.`,
+    `양변에 ${sub}를 더하면 \`x = ${total + sub}\`입니다.`,
+  ] };
 }
 
 function m1Coord(_, n) {
-  const t = T(n, 4);
+  const t = T(n, 8);
   const x = ((n * 3) % 13) - 6, y = ((n * 7) % 11) - 5;
   if (t === 0) {
     const q = x > 0 ? (y > 0 ? "제1사분면" : "제4사분면") : (y > 0 ? "제2사분면" : "제3사분면");
@@ -291,15 +533,43 @@ function m1Coord(_, n) {
       `따라서 중점은 \`(${mx}, ${my})\`입니다.`,
     ] };
   }
-  // t === 3
-  return { prompt: `x > 0, y < 0인 점은 몇 사분면인가?`, answer: "제4사분면", concept: "x양수 y음수 → 제4사분면", solve: [
+  if (t === 3) {
+    return { prompt: `x > 0, y < 0인 점은 몇 사분면인가?`, answer: "제4사분면", concept: "x양수 y음수 → 제4사분면", solve: [
     `x > 0이면 오른쪽, y < 0이면 아래쪽 영역입니다.`,
     `(+, −) 조합은 제4사분면입니다.`,
+  ] };
+  }
+  if (t === 4) {
+    return { prompt: `점 (${x}, ${y})를 y축 대칭이동한 점의 좌표는?`, answer: `(${-x}, ${y})`, concept: "y축 대칭: x좌표의 부호만 바꾼다.", solve: [
+      `y축 대칭이동은 y좌표는 그대로 두고 x좌표의 부호만 바꿉니다.`,
+      `따라서 \`(${-x}, ${y})\`입니다.`,
+    ] };
+  }
+  if (t === 5) {
+    return { prompt: `점 (${x}, ${y})를 원점 대칭이동한 점의 좌표는?`, answer: `(${-x}, ${-y})`, concept: "원점 대칭: x, y좌표의 부호를 모두 바꾼다.", solve: [
+      `원점 대칭이동은 두 좌표의 부호를 모두 바꿉니다.`,
+      `따라서 \`(${-x}, ${-y})\`입니다.`,
+    ] };
+  }
+  if (t === 6) {
+    const moveX = (n % 5) + 1;
+    const moveY = (n % 4) + 1;
+    return { prompt: `점 (${x}, ${y})를 오른쪽으로 ${moveX}, 위로 ${moveY}만큼 평행이동한 좌표는?`, answer: `(${x + moveX}, ${y + moveY})`, concept: "평행이동은 x, y좌표에 이동량을 각각 더한다.", solve: [
+      `오른쪽 이동은 x좌표에 ${moveX}를 더합니다.`,
+      `위쪽 이동은 y좌표에 ${moveY}를 더합니다.`,
+      `따라서 \`(${x + moveX}, ${y + moveY})\`입니다.`,
+    ] };
+  }
+  const a = (n % 5) + 1;
+  const b = a + (n % 4) + 2;
+  return { prompt: `x좌표가 ${a} 이상 ${b} 이하인 정수 좌표는 몇 개인가?`, answer: String(b - a + 1), concept: "정수 좌표의 개수는 양끝을 포함해 센다.", solve: [
+    `이상과 이하는 양끝 값을 포함합니다.`,
+    `개수는 \`${b} - ${a} + 1 = ${b - a + 1}\`입니다.`,
   ] };
 }
 
 function m1GeoBasic(_, n) {
-  const t = T(n, 4);
+  const t = T(n, 8);
   const ang = (n % 8) * 10 + 30;
   if (t === 0) {
     const supp = 180 - ang;
@@ -333,16 +603,40 @@ function m1GeoBasic(_, n) {
         `이 시작점과 방향의 차이가 둘을 구분합니다.`,
       ] };
   }
-  // t === 3
-  const n1 = (n % 4) + 3;
-  return { prompt: `평행한 두 직선에 한 직선이 교차할 때 동위각의 크기가 ${ang}°이면 엇각의 크기는?`, answer: String(ang), concept: "평행선에서 동위각 = 엇각", solve: [
+  if (t === 3) {
+    return { prompt: `평행한 두 직선에 한 직선이 교차할 때 동위각의 크기가 ${ang}°이면 엇각의 크기는?`, answer: String(ang), concept: "평행선에서 동위각 = 엇각", solve: [
     `평행선에서 동위각의 크기는 엇각의 크기와 같습니다.`,
     `동위각이 ${ang}°이므로 엇각도 ${ang}°입니다.`,
+  ] };
+  }
+  if (t === 4) {
+    return { prompt: `∠A와 ∠B가 맞꼭지각이고 ∠A = ${ang}°일 때 ∠B의 크기는?`, answer: String(ang), concept: "맞꼭지각의 크기는 서로 같다.", solve: [
+      `맞꼭지각은 서로 마주 보는 각입니다.`,
+      `맞꼭지각의 크기는 같으므로 ∠B = ${ang}°입니다.`,
+    ] };
+  }
+  if (t === 5) {
+    const side = (n % 6) + 3;
+    return { prompt: `한 변의 길이가 ${side}cm인 정삼각형의 둘레를 구하시오.`, answer: String(side * 3), concept: "정삼각형의 세 변의 길이는 모두 같다.", solve: [
+      `정삼각형은 세 변이 모두 ${side}cm입니다.`,
+      `둘레는 \`${side} × 3 = ${side * 3}\`cm입니다.`,
+    ] };
+  }
+  if (t === 6) {
+    const angle = 180 - ang;
+    return { prompt: `일직선 위의 두 각 중 하나가 ${ang}°일 때 다른 각의 크기는?`, answer: String(angle), concept: "일직선 위의 두 각의 합은 180°이다.", solve: [
+      `일직선 위의 두 각은 합이 180°입니다.`,
+      `\`180 - ${ang} = ${angle}\`입니다.`,
+    ] };
+  }
+  return { prompt: `삼각형의 두 내각이 ${ang % 70 + 30}°, ${(n % 5) * 10 + 40}°일 때 나머지 한 각은?`, answer: String(180 - (ang % 70 + 30) - ((n % 5) * 10 + 40)), concept: "삼각형의 세 내각의 합은 180°이다.", solve: [
+    `삼각형의 내각의 합은 180°입니다.`,
+    `나머지 각은 \`180 - ${ang % 70 + 30} - ${(n % 5) * 10 + 40} = ${180 - (ang % 70 + 30) - ((n % 5) * 10 + 40)}\`°입니다.`,
   ] };
 }
 
 function m1Solid(_, n) {
-  const t = T(n, 4);
+  const t = T(n, 8);
   const r = (n % 6) + 2, h = (n % 5) + 3, s = (n % 4) + 2;
   if (t === 0) {
     const solve = [
@@ -374,15 +668,39 @@ function m1Solid(_, n) {
         `따라서 면: 6, 꼭짓점: 8, 모서리: 12입니다.`,
       ] };
   }
-  return { prompt: `반지름 ${r}cm인 구의 부피를 구하시오.`, answer: `${Math.round(4/3*r**3)}π/3 cm³`, concept: "구의 부피 = (4/3)πr³", solve: [
+  if (t === 3) {
+    return { prompt: `반지름 ${r}cm인 구의 부피를 구하시오.`, answer: `${Math.round(4/3*r**3)}π/3 cm³`, concept: "구의 부피 = (4/3)πr³", solve: [
     `구의 부피는 (4/3)πr³입니다.`,
     `\`(4/3) × π × ${r}³ = (4/3) × ${r ** 3}π = ${Math.round(4 / 3 * r ** 3)}π/3\``,
     `따라서 부피는 약 ${Math.round(4 / 3 * r ** 3)}π/3 cm³입니다.`,
   ] };
+  }
+  if (t === 4) {
+    return { prompt: `반지름 ${r}cm인 원의 둘레를 구하시오.`, answer: `${2 * r}π cm`, concept: "원의 둘레 = 2πr", solve: [
+      `원의 둘레는 2πr입니다.`,
+      `\`2 × π × ${r} = ${2 * r}π\`cm입니다.`,
+    ] };
+  }
+  if (t === 5) {
+    return { prompt: `밑면이 한 변 ${s}cm인 정사각형이고 높이가 ${h}cm인 각기둥의 부피는?`, answer: `${s * s * h} cm³`, concept: "각기둥 부피 = 밑넓이 × 높이", solve: [
+      `밑면 넓이는 \`${s} × ${s} = ${s * s}\`입니다.`,
+      `높이 ${h}를 곱하면 \`${s * s} × ${h} = ${s * s * h}\`cm³입니다.`,
+    ] };
+  }
+  if (t === 6) {
+    return { prompt: `모서리가 12개인 입체도형으로 알맞은 것은?`, answer: "직육면체", concept: "직육면체는 면 6개, 꼭짓점 8개, 모서리 12개이다.", solve: [
+      `직육면체의 모서리는 위 4개, 아래 4개, 세로 4개입니다.`,
+      `총 12개이므로 알맞은 입체도형은 직육면체입니다.`,
+    ] };
+  }
+  return { prompt: `반지름 ${r}cm, 높이 ${h}cm인 원기둥의 옆넓이를 구하시오.`, answer: `${2 * r * h}π cm²`, concept: "원기둥 옆넓이 = 밑면의 둘레 × 높이", solve: [
+    `밑면의 둘레는 \`${2 * r}π\`cm입니다.`,
+    `높이 ${h}를 곱하면 \`${2 * r}π × ${h} = ${2 * r * h}π\`cm²입니다.`,
+  ] };
 }
 
 function m1Stat(_, n) {
-  const t = T(n, 4);
+  const t = T(n, 8);
   const data = [n+2, n+5, n+1, n+7, n+3, n+4, n+6].slice(0, 5).sort((a,b)=>a-b);
   const mean = data.reduce((s,v)=>s+v,0)/5;
   const med = data[2];
@@ -417,11 +735,38 @@ function m1Stat(_, n) {
         `따라서 전체 도수는 ${freq.reduce((s,v)=>s+v,0)}입니다.`,
       ] };
   }
-  const mode = data.reduce((a,b,_,arr)=>arr.filter(v=>v===a).length>=arr.filter(v=>v===b).length?a:b);
-  return { prompt: `자료 ${[...data, data[2]].join(", ")}에서 최빈값을 구하시오.`, answer: String(data[2]), concept: "최빈값: 가장 자주 나타나는 값", solve: [
+  if (t === 3) {
+    return { prompt: `자료 ${[...data, data[2]].join(", ")}에서 최빈값을 구하시오.`, answer: String(data[2]), concept: "최빈값: 가장 자주 나타나는 값", solve: [
     `최빈값은 가장 자주 나타나는 값입니다.`,
     `자료 \`${[...data, data[2]].join(", ")}\`에서 ${data[2]}이(가) 두 번 나타나 가장 많습니다.`,
     `따라서 최빈값은 ${data[2]}입니다.`,
+  ] };
+  }
+  if (t === 4) {
+    return { prompt: `자료 ${data.join(", ")}의 범위를 구하시오.`, answer: String(data[data.length - 1] - data[0]), concept: "범위 = 최댓값 - 최솟값", solve: [
+      `최댓값은 ${data[data.length - 1]}, 최솟값은 ${data[0]}입니다.`,
+      `범위는 \`${data[data.length - 1]} - ${data[0]} = ${data[data.length - 1] - data[0]}\`입니다.`,
+    ] };
+  }
+  if (t === 5) {
+    const total = data.reduce((s, v) => s + v, 0);
+    return { prompt: `자료의 평균이 ${Math.round(total / data.length)}이고 자료 수가 ${data.length}개일 때 자료의 합은?`, answer: String(Math.round(total / data.length) * data.length), concept: "합계 = 평균 × 자료 수", solve: [
+      `합계는 평균 × 자료 수입니다.`,
+      `\`${Math.round(total / data.length)} × ${data.length} = ${Math.round(total / data.length) * data.length}\`입니다.`,
+    ] };
+  }
+  if (t === 6) {
+    const freq = [2, 3, 5, 4];
+    return { prompt: `도수 ${freq.join(", ")}의 합계를 구하시오.`, answer: String(freq.reduce((s, v) => s + v, 0)), concept: "전체 도수는 각 도수의 합이다.", solve: [
+      `각 도수를 모두 더합니다.`,
+      `\`${freq.join(" + ")} = ${freq.reduce((s, v) => s + v, 0)}\`입니다.`,
+    ] };
+  }
+  const ratio = (n % 4) + 1;
+  const total = ratio * 10;
+  return { prompt: `전체 ${total}명 중 ${ratio}명이 선택했다. 상대도수를 구하시오.`, answer: String(ratio / total), concept: "상대도수 = 도수 ÷ 전체 도수", solve: [
+    `상대도수는 도수 ÷ 전체 도수입니다.`,
+    `\`${ratio} ÷ ${total} = ${ratio / total}\`입니다.`,
   ] };
 }
 

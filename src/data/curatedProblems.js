@@ -1,4 +1,62 @@
-// 자동 생성 파일 — 직접 편집하지 마세요.
-// scratchpad/gen/skills/*.json 을 scripts/assemble-problems.mjs 로 조립해 생성합니다.
 // 형식: { "<skillId>": [ { title, prompt, answer, choices?, difficulty, concept, hint }, ... ] }
-export const problemsBySkill = {};
+// m1-expressions는 반복 템플릿 체감이 커서 수동 구성 문제를 우선 사용한다.
+const m1Expressions = [
+  { difficulty: 1, title: "문자와 식 1", prompt: "8x + 15에서 x항과 상수항을 구분하시오.", answer: "x항: 8x, 상수항: 15", concept: "문자를 포함한 항과 수만 있는 항을 구분한다.", hint: "x가 붙은 항과 숫자만 있는 항을 따로 보세요." },
+  { difficulty: 1, title: "문자와 식 2", prompt: "x = 6일 때 9x - 7의 값을 구하시오.", answer: "47", concept: "문자 자리에 값을 대입한다.", hint: "9×6을 먼저 계산하세요." },
+  { difficulty: 1, title: "문자와 식 3", prompt: "13x + 4x를 동류항끼리 정리하시오.", answer: "17x", concept: "같은 문자 항끼리 계수를 더한다.", hint: "x항의 계수 13과 4를 더하세요." },
+  { difficulty: 1, title: "문자와 식 4", prompt: "가로가 11x, 세로가 8인 직사각형의 넓이를 문자식으로 나타내시오.", answer: "88x", concept: "넓이 = 가로 × 세로", hint: "11x와 8을 곱하세요." },
+  { difficulty: 1, title: "문자와 식 5", prompt: "\"어떤 수 x의 12배보다 5 큰 수\"를 문자식으로 나타내시오.", answer: "12x + 5", concept: "말로 된 관계를 문자식으로 옮긴다.", hint: "12배를 먼저 쓰고 5를 더하세요." },
+  { difficulty: 1, title: "문자와 식 6", prompt: "단항식 7a²b³의 차수를 구하시오.", answer: "5", concept: "단항식의 차수는 문자 지수의 합이다.", hint: "a의 지수 2와 b의 지수 3을 더하세요." },
+  { difficulty: 1, title: "문자와 식 7", prompt: "한 권에 900원인 공책 x권의 가격을 문자식으로 나타내시오.", answer: "900x", concept: "단가와 개수를 곱한다.", hint: "900원짜리 x개입니다." },
+  { difficulty: 1, title: "문자와 식 8", prompt: "x = 4일 때 15 - 2x의 값을 구하시오.", answer: "7", concept: "대입 후 연산 순서대로 계산한다.", hint: "2×4를 먼저 계산하세요." },
+  { difficulty: 1, title: "문자와 식 9", prompt: "5x + 3y에서 x항과 y항을 각각 쓰시오.", answer: "x항: 5x, y항: 3y", concept: "문자가 다른 항은 서로 다른 항이다.", hint: "x가 붙은 항과 y가 붙은 항을 나누세요." },
+  { difficulty: 1, title: "문자와 식 10", prompt: "x개의 사탕을 4명에게 똑같이 나누면 한 명이 받는 사탕 수를 문자식으로 나타내시오.", answer: "x/4", concept: "나누어 갖는 상황은 나눗셈으로 나타낸다.", hint: "전체 x를 4로 나눕니다." },
+
+  { difficulty: 2, title: "문자와 식 11", prompt: "6(x + 9)를 전개하시오.", answer: "6x + 54", concept: "분배법칙을 사용한다.", hint: "6을 x와 9에 각각 곱하세요." },
+  { difficulty: 2, title: "문자와 식 12", prompt: "14x - 6x + 23을 간단히 하시오.", answer: "8x + 23", concept: "동류항끼리 정리한다.", hint: "x항끼리 먼저 계산하세요." },
+  { difficulty: 2, title: "문자와 식 13", prompt: "x = -3일 때 7x + 28의 값을 구하시오.", answer: "7", concept: "음수를 대입할 때 부호에 주의한다.", hint: "7×(-3)을 먼저 계산하세요." },
+  { difficulty: 2, title: "문자와 식 14", prompt: "3x + 5y + 8x - 2y를 동류항끼리 정리하시오.", answer: "11x + 3y", concept: "x항과 y항을 따로 모은다.", hint: "x항끼리, y항끼리 따로 계산하세요." },
+  { difficulty: 2, title: "문자와 식 15", prompt: "\"x에 11을 더한 값의 5배\"를 문자식으로 나타내시오.", answer: "5(x + 11)", concept: "먼저 해야 하는 덧셈은 괄호로 묶는다.", hint: "x+11 전체에 5를 곱합니다." },
+  { difficulty: 2, title: "문자와 식 16", prompt: "가로가 7x + 3, 세로가 5인 직사각형의 넓이를 문자식으로 나타내시오.", answer: "35x + 15", concept: "다항식에 수를 곱할 때 분배법칙을 쓴다.", hint: "5를 7x와 3에 각각 곱하세요." },
+  { difficulty: 2, title: "문자와 식 17", prompt: "한 개에 1200원인 물건 x개와 700원인 물건 y개의 총액을 문자식으로 나타내시오.", answer: "1200x + 700y", concept: "각 물건의 금액을 더한다.", hint: "각 단가에 개수를 곱한 뒤 더하세요." },
+  { difficulty: 2, title: "문자와 식 18", prompt: "다항식 9x² - 4x + 17에서 x²의 계수와 상수항의 합을 구하시오.", answer: "26", concept: "계수와 상수항을 정확히 읽는다.", hint: "x²의 계수는 9, 상수항은 17입니다." },
+  { difficulty: 2, title: "문자와 식 19", prompt: "4(2x - 7)를 전개하시오.", answer: "8x - 28", concept: "괄호 안의 음수에도 곱한다.", hint: "4×2x와 4×(-7)을 계산하세요." },
+  { difficulty: 2, title: "문자와 식 20", prompt: "x = 8, y = 3일 때 5x - 4y의 값을 구하시오.", answer: "28", concept: "두 문자에 각각 값을 대입한다.", hint: "5×8과 4×3을 계산한 뒤 빼세요." },
+
+  { difficulty: 3, title: "문자와 식 21", prompt: "8(x + 12) - 5x를 간단히 하시오.", answer: "3x + 96", concept: "분배 후 동류항을 정리한다.", hint: "먼저 8x+96으로 전개하세요." },
+  { difficulty: 3, title: "문자와 식 22", prompt: "12(x - 5) + 7(x + 3)를 간단히 하시오.", answer: "19x - 39", concept: "두 괄호를 각각 전개한다.", hint: "12x-60과 7x+21을 더하세요." },
+  { difficulty: 3, title: "문자와 식 23", prompt: "x = -4일 때 6(x + 9) - 11의 값을 구하시오.", answer: "19", concept: "괄호 안부터 계산하고 대입한다.", hint: "-4+9를 먼저 계산하세요." },
+  { difficulty: 3, title: "문자와 식 24", prompt: "9x + 6y - 4x + 13 - 2y를 동류항끼리 정리하시오.", answer: "5x + 4y + 13", concept: "x항, y항, 상수항을 나눈다.", hint: "세 종류로 나누어 모으세요." },
+  { difficulty: 3, title: "문자와 식 25", prompt: "가로가 6x + 11, 세로가 4x - 3인 직사각형의 둘레를 문자식으로 나타내시오.", answer: "20x + 16", concept: "둘레 = 2×(가로+세로)", hint: "가로+세로를 먼저 간단히 하세요." },
+  { difficulty: 3, title: "문자와 식 26", prompt: "한 개에 1500원인 펜 x개와 900원인 지우개 y개를 사고 2000원을 할인받았다. 총액을 문자식으로 나타내시오.", answer: "1500x + 900y - 2000", concept: "할인은 전체 금액에서 뺀다.", hint: "할인 전 금액에서 2000을 빼세요." },
+  { difficulty: 3, title: "문자와 식 27", prompt: "다항식 7x² + 5xy - 12에서 x²의 계수, xy의 계수, 상수항의 합을 구하시오.", answer: "0", concept: "여러 항의 계수와 상수항을 구분한다.", hint: "7 + 5 + (-12)를 계산하세요." },
+  { difficulty: 3, title: "문자와 식 28", prompt: "\"x보다 6 큰 수의 9배에서 x의 4배를 뺀 식\"을 간단히 하시오.", answer: "5x + 54", concept: "문장식을 세운 뒤 정리한다.", hint: "9(x+6)-4x로 세우세요." },
+  { difficulty: 3, title: "문자와 식 29", prompt: "(10x - 8) + (3x + 25)를 간단히 하시오.", answer: "13x + 17", concept: "괄호를 풀고 같은 항끼리 모은다.", hint: "x항과 상수항을 따로 더하세요." },
+  { difficulty: 3, title: "문자와 식 30", prompt: "x = 5, y = -2일 때 8x + 3y - 14의 값을 구하시오.", answer: "20", concept: "음수 대입과 뺄셈을 함께 처리한다.", hint: "3×(-2)를 주의하세요." },
+
+  { difficulty: 4, title: "문자와 식 31", prompt: "15(x + 14) - 9(x - 6)를 간단히 하시오.", answer: "6x + 264", concept: "뺄셈 앞 괄호의 부호를 주의한다.", hint: "-9(x-6)을 전개하면 -9x+54입니다." },
+  { difficulty: 4, title: "문자와 식 32", prompt: "7(3x - 8) + 4(2x + 15)를 간단히 하시오.", answer: "29x + 4", concept: "두 분배식을 더한다.", hint: "21x-56과 8x+60을 더하세요." },
+  { difficulty: 4, title: "문자와 식 33", prompt: "x = -6일 때 11(x + 4) - 3(x - 12)의 값을 구하시오.", answer: "8", concept: "음수 대입과 괄호 뺄셈을 처리한다.", hint: "각 괄호 값을 먼저 계산하세요." },
+  { difficulty: 4, title: "문자와 식 34", prompt: "18x - 7y + 13 - 5x + 19y - 31을 간단히 하시오.", answer: "13x + 12y - 18", concept: "세 종류의 항을 각각 정리한다.", hint: "x항, y항, 상수항 순서로 모으세요." },
+  { difficulty: 4, title: "문자와 식 35", prompt: "가로가 12x - 5, 세로가 7x + 16인 직사각형의 둘레를 문자식으로 나타내시오.", answer: "38x + 22", concept: "둘레 공식에 다항식을 대입한다.", hint: "가로+세로는 19x+11입니다." },
+  { difficulty: 4, title: "문자와 식 36", prompt: "\"x의 13배에서 8을 뺀 값\"과 \"x에 5를 더한 값의 4배\"의 차를 간단히 하시오.", answer: "9x - 28", concept: "두 문장식을 세우고 뺀다.", hint: "(13x-8)-4(x+5)를 정리하세요." },
+  { difficulty: 4, title: "문자와 식 37", prompt: "9a²b - 4ab² + 6에서 각 항의 계수의 합을 구하시오.", answer: "11", concept: "상수항도 계수처럼 수로 본다.", hint: "9, -4, 6을 더하세요." },
+  { difficulty: 4, title: "문자와 식 38", prompt: "(8x + 5y - 12) - (3x - 7y + 20)를 간단히 하시오.", answer: "5x + 12y - 32", concept: "괄호 앞 마이너스는 모든 항의 부호를 바꾼다.", hint: "두 번째 괄호의 부호를 모두 바꾸세요." },
+  { difficulty: 4, title: "문자와 식 39", prompt: "x = -3, y = 7일 때 12x - 5(y - 4)의 값을 구하시오.", answer: "-51", concept: "괄호 안 계산 후 곱한다.", hint: "y-4는 3입니다." },
+  { difficulty: 4, title: "문자와 식 40", prompt: "어떤 직사각형의 둘레가 34x + 18이고 세로가 6x + 5일 때 가로를 문자식으로 나타내시오.", answer: "11x + 4", concept: "둘레의 절반에서 세로를 뺀다.", hint: "가로+세로는 17x+9입니다." },
+
+  { difficulty: 5, title: "문자와 식 41", prompt: "23(x - 18) - 14(x + 27)를 간단히 하시오.", answer: "9x - 792", concept: "큰 수의 분배와 부호를 정확히 처리한다.", hint: "23x-414와 -14x-378을 더하세요." },
+  { difficulty: 5, title: "문자와 식 42", prompt: "5(4x - 3y + 12) - 2(7x + 5y - 9)를 간단히 하시오.", answer: "6x - 25y + 78", concept: "여러 문자와 괄호를 함께 정리한다.", hint: "각 괄호를 전개한 뒤 x, y, 상수항을 모으세요." },
+  { difficulty: 5, title: "문자와 식 43", prompt: "x = -8, y = 5일 때 9(x + 11) - 4(2y - x)의 값을 구하시오.", answer: "-45", concept: "두 문자 대입과 중첩된 부호를 처리한다.", hint: "x+11과 2y-x를 먼저 계산하세요." },
+  { difficulty: 5, title: "문자와 식 44", prompt: "(17x - 9y + 31) - 3(4x + 5y - 6)를 간단히 하시오.", answer: "5x - 24y + 49", concept: "분배 후 괄호 뺄셈까지 처리한다.", hint: "3(4x+5y-6)을 먼저 전개하세요." },
+  { difficulty: 5, title: "문자와 식 45", prompt: "가로가 14x - 9, 세로가 8x + 13인 직사각형에서 가로가 3x만큼 늘고 세로가 5만큼 줄었다. 새 둘레를 문자식으로 나타내시오.", answer: "50x - 2", concept: "변한 길이를 먼저 반영한 뒤 둘레를 구한다.", hint: "새 가로는 17x-9, 새 세로는 8x+8입니다." },
+  { difficulty: 5, title: "문자와 식 46", prompt: "한 상품을 x개 사면 개당 1800원이고, 12개 이상이면 총액에서 7500원을 할인한다. 12개 이상 샀을 때 총액을 문자식으로 나타내시오.", answer: "1800x - 7500", concept: "조건이 붙은 총액식을 세운다.", hint: "할인 전 금액에서 7500을 빼세요." },
+  { difficulty: 5, title: "문자와 식 47", prompt: "다항식 11x²y - 6xy² + 8x - 19에서 모든 항의 계수의 합을 구하시오.", answer: "-6", concept: "문자 부분을 제외한 수들을 모두 더한다.", hint: "11, -6, 8, -19를 더하세요." },
+  { difficulty: 5, title: "문자와 식 48", prompt: "2(9x - 4y + 15) + 3(5y - 7x - 8)를 간단히 하시오.", answer: "-3x + 7y + 6", concept: "두 괄호의 전개식을 합쳐 정리한다.", hint: "18x-8y+30과 15y-21x-24를 더하세요." },
+  { difficulty: 5, title: "문자와 식 49", prompt: "x = -10일 때 6(3x + 25) - 5(2x - 17)의 값을 구하시오.", answer: "65", concept: "큰 음수 대입과 두 괄호 계산을 처리한다.", hint: "각 괄호 값을 먼저 구하세요." },
+  { difficulty: 5, title: "문자와 식 50", prompt: "\"x의 21배에서 13을 뺀 식\"에서 \"x보다 9 작은 수의 8배\"를 뺀 식을 간단히 하시오.", answer: "13x + 59", concept: "복합 문장식을 세운 뒤 괄호를 풀어 정리한다.", hint: "(21x-13)-8(x-9)를 정리하세요." },
+];
+
+export const problemsBySkill = {
+  "m1-expressions": m1Expressions,
+};

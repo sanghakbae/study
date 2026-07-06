@@ -245,6 +245,18 @@ function getAnswerInputExample(problem) {
   return "";
 }
 
+function getProblemTimeLimitSeconds(difficulty = 1) {
+  const level = Math.min(5, Math.max(1, Number(difficulty) || 1));
+  return [0, 120, 100, 80, 60, 45][level];
+}
+
+function formatProblemTime(seconds = 0) {
+  const safe = Math.max(0, Number(seconds) || 0);
+  const minutes = Math.floor(safe / 60);
+  const rest = safe % 60;
+  return `${minutes}:${String(rest).padStart(2, "0")}`;
+}
+
 function getProblemOrder(problem) {
   const match = String(problem.id || "").match(/-(\d+)$/);
   return match ? Number(match[1]) : Number.MAX_SAFE_INTEGER;
@@ -271,10 +283,26 @@ function getGuideFallback(actionKey, problem) {
     : "";
 }
 
-function chooseProblemId({ problems, savedLocation, skillId, solvedIds = [] }) {
+function getProblemOrderValue(problemOrId) {
+  const raw = typeof problemOrId === "string"
+    ? problemOrId
+    : `${problemOrId?.id || ""} ${problemOrId?.title || ""}`;
+  const match = String(raw).match(/(?:^|[-\s])0*(\d+)$/);
+  return match ? Number(match[1]) : null;
+}
+
+function isProblemSolved(problem, solvedIds = []) {
+  if (!problem) return false;
   const solved = new Set(solvedIds);
+  if (solved.has(problem.id)) return true;
+  const problemOrder = getProblemOrderValue(problem);
+  if (problemOrder == null) return false;
+  return solvedIds.some((solvedId) => getProblemOrderValue(solvedId) === problemOrder);
+}
+
+function chooseProblemId({ problems, savedLocation, skillId, solvedIds = [] }) {
   const savedProblemId = savedLocation.skillId === skillId ? savedLocation.problemId : "";
-  const firstUnsolved = problems.find((problem) => !solved.has(problem.id));
+  const firstUnsolved = problems.find((problem) => !isProblemSolved(problem, solvedIds));
   if (firstUnsolved) return firstUnsolved.id;
   // 모두 풀었으면 저장 위치나 첫 문제를 보여준다.
   if (savedProblemId && problems.some((problem) => problem.id === savedProblemId)) return savedProblemId;
@@ -464,6 +492,7 @@ export default function App() {
   const [pendingRole, setPendingRole] = useState(null);
   const [saving, setSaving] = useState(false);
   const [answerChecks, setAnswerChecks] = useState({});
+  const [problemTimeLeft, setProblemTimeLeft] = useState(0);
   const [hintUsed, setHintUsed] = useState({});
   const [reviewCounts, setReviewCounts] = useState({});
   const [solvedBySkill, setSolvedBySkill] = useState({});
@@ -489,6 +518,8 @@ export default function App() {
   const selectedProblemIdRef = useRef(defaultProblemId);
   const pickedForSkillRef = useRef("");
   const progressReadyRef = useRef(false);
+  const timedOutProblemRef = useRef("");
+  const activeTimerProblemRef = useRef("");
   const deployVersionRef = useRef("");
   const auditLoginRef = useRef("");
   const parentViewAuditRef = useRef("");
@@ -505,11 +536,49 @@ export default function App() {
     () => problems.find((item) => item.id === selectedProblemId) || problems[0] || getProblemsForSkill(curriculumNodes[0])[0],
     [selectedProblemId, problems],
   );
+  const selectedProblemSolved = useMemo(
+    () => isProblemSolved(selectedProblem, solvedBySkill[selectedSkillId] || []),
+    [selectedProblem, solvedBySkill, selectedSkillId],
+  );
+  const selectedProblemAnswerStatus = selectedProblem?.id ? answerChecks[selectedProblem.id]?.status || "" : "";
 
   useEffect(() => {
     if (!selectedProblem?.id) return;
     setGuide(getFreshProblemGuide(selectedProblem, "conceptGuide") || `## 개념 학습\n- ${selectedProblem.concept}`);
   }, [selectedProblem?.id]);
+
+  useEffect(() => {
+    if (!selectedProblem?.id || selectedProblemSolved || selectedProblemAnswerStatus) {
+      activeTimerProblemRef.current = "";
+      setProblemTimeLeft(0);
+      return;
+    }
+    timedOutProblemRef.current = "";
+    activeTimerProblemRef.current = selectedProblem.id;
+    setProblemTimeLeft(getProblemTimeLimitSeconds(selectedProblem.difficulty));
+  }, [selectedProblem?.id, selectedProblem?.difficulty, selectedProblemSolved, selectedProblemAnswerStatus]);
+
+  useEffect(() => {
+    if (!selectedProblem?.id || selectedProblemSolved || selectedProblemAnswerStatus) return;
+    if (activeTimerProblemRef.current !== selectedProblem.id) return;
+    if (problemTimeLeft <= 0) {
+      if (timedOutProblemRef.current === selectedProblem.id) return;
+      timedOutProblemRef.current = selectedProblem.id;
+      setAnswerChecks((current) => ({
+        ...current,
+        [selectedProblem.id]: {
+          status: "wrong",
+          input: "시간 초과",
+        },
+      }));
+      recordWrongProblem(selectedProblem, "시간 초과", "시간 초과입니다. 오답노트에 기록했습니다. 풀이 방향을 확인하고 다시 풀어보세요.");
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setProblemTimeLeft((current) => Math.max(0, current - 1));
+    }, 1000);
+    return () => window.clearTimeout(timer);
+  }, [selectedProblem, selectedProblemSolved, selectedProblemAnswerStatus, problemTimeLeft]);
 
   useEffect(() => {
     let cancelled = false;
@@ -683,7 +752,10 @@ export default function App() {
 
   useEffect(() => {
     if (!authReady || !user || !selectedSkillId || !selectedProblemId) return;
-    if ((solvedBySkill[selectedSkillId] || []).includes(selectedProblemId)) return;
+    const selected = problems.find((problem) => problem.id === selectedProblemId);
+    if (isProblemSolved(selected, solvedBySkill[selectedSkillId] || [])) {
+      return;
+    }
     window.clearTimeout(studyLocationTimerRef.current);
     studyLocationTimerRef.current = window.setTimeout(() => {
       updateStudyLocation({ uid: user.uid, skillId: selectedSkillId, problemId: selectedProblemId }).catch((error) => {
@@ -691,7 +763,7 @@ export default function App() {
       });
     }, 2000);
     return () => window.clearTimeout(studyLocationTimerRef.current);
-  }, [authReady, selectedSkillId, selectedProblemId, user, solvedBySkill]);
+  }, [authReady, selectedSkillId, selectedProblemId, user, solvedBySkill, problems]);
 
   useEffect(() => {
     if (!authReady || !user || profile.role !== "parents") return;
@@ -1031,8 +1103,8 @@ export default function App() {
     const currentIndex = inSkill.findIndex((problem) => problem.id === completedProblemId);
     // 방금 푼 문제 "다음 번호"부터 안 푼 문제를 찾고, 없으면 앞쪽의 안 푼 문제로 돌아간다.
     const nextProblem =
-      inSkill.slice(currentIndex + 1).find((problem) => !solved.has(problem.id)) ||
-      inSkill.find((problem) => !solved.has(problem.id));
+      inSkill.slice(currentIndex + 1).find((problem) => !isProblemSolved(problem, Array.from(solved))) ||
+      inSkill.find((problem) => !isProblemSolved(problem, Array.from(solved)));
     if (nextProblem) {
       setSelectedProblemId(nextProblem.id);
       return;
@@ -1110,6 +1182,43 @@ export default function App() {
     }
   }
 
+  async function recordWrongProblem(problem, submittedAnswer, message = "정답이 아닙니다. 힌트나 풀이 방향을 눌러 어디서 어긋났는지 확인하세요.") {
+    if (!user || !problem) return;
+    setGuide(message);
+    const helpUsedWrong = Array.isArray(hintUsed[problem.id]) ? hintUsed[problem.id] : [];
+    const localWrongAttempt = {
+      id: `local-wrong-${problem.id}-${Date.now()}`,
+      uid: user.uid,
+      nodeId: problem.nodeId,
+      problemId: problem.id,
+      problemTitle: problem.title || problem.id,
+      problemPrompt: problem.prompt || "",
+      submittedAnswer,
+      helpUsed: helpUsedWrong,
+      status: "wrong",
+      wrong: true,
+      completed: false,
+      createdAt: Date.now(),
+      pendingSync: true,
+    };
+    setActivityAttempts((current) => [localWrongAttempt, ...current]);
+    try {
+      await saveAttempt({
+        user,
+        problem,
+        strokes: notebookRef.current?.exportStrokes?.() || [],
+        guide,
+        isCorrect: false,
+        status: "wrong",
+        submittedAnswer,
+        helpUsed: helpUsedWrong,
+      });
+    } catch (error) {
+      console.error(error);
+      setDataWarning(`오답은 화면에 반영됐지만 DB 저장은 실패했습니다: ${error.message}`);
+    }
+  }
+
   async function handleAnswerCheck(inputAnswer) {
     if (!user || !selectedProblem) return false;
     const correct = isCorrectMathAnswer(inputAnswer, selectedProblem.answer, selectedProblem);
@@ -1127,39 +1236,7 @@ export default function App() {
       return true;
     }
 
-    setGuide("정답이 아닙니다. 힌트나 풀이 방향을 눌러 어디서 어긋났는지 확인하세요.");
-    const helpUsedWrong = Array.isArray(hintUsed[selectedProblem.id]) ? hintUsed[selectedProblem.id] : [];
-    const localWrongAttempt = {
-      id: `local-wrong-${selectedProblem.id}-${Date.now()}`,
-      uid: user.uid,
-      nodeId: selectedProblem.nodeId,
-      problemId: selectedProblem.id,
-      problemTitle: selectedProblem.title || selectedProblem.id,
-      problemPrompt: selectedProblem.prompt || "",
-      submittedAnswer: inputAnswer,
-      helpUsed: helpUsedWrong,
-      status: "wrong",
-      wrong: true,
-      completed: false,
-      createdAt: Date.now(),
-      pendingSync: true,
-    };
-    setActivityAttempts((current) => [localWrongAttempt, ...current]);
-    try {
-      await saveAttempt({
-        user,
-        problem: selectedProblem,
-        strokes: notebookRef.current?.exportStrokes?.() || [],
-        guide,
-        isCorrect: false,
-        status: "wrong",
-        submittedAnswer: inputAnswer,
-        helpUsed: helpUsedWrong,
-      });
-    } catch (error) {
-      console.error(error);
-      setDataWarning(`오답은 화면에 반영됐지만 DB 저장은 실패했습니다: ${error.message}`);
-    }
+    await recordWrongProblem(selectedProblem, inputAnswer);
     return false;
   }
 
@@ -1476,6 +1553,9 @@ export default function App() {
           totalProblemCount={getProblemCountForSkill(selectedSkillId)}
           solvedIds={solvedBySkill[selectedSkillId] || []}
           guidePenaltyRate={getGuidePenaltyRate(selectedProblem?.id)}
+          timeLeft={problemTimeLeft}
+          timeLimit={getProblemTimeLimitSeconds(selectedProblem?.difficulty)}
+          timerActive={!selectedProblemSolved && !selectedProblemAnswerStatus}
           onAnswerCheck={handleAnswerCheck}
         />
 
@@ -2526,7 +2606,7 @@ function buildActualLeaderboard(leaders, currentUid, profile) {
   }
   if (currentUid) {
     const currentLeader = merged.get(currentUid);
-    merged.set(currentUid, { ...profile, ...currentLeader, uid: currentUid });
+    merged.set(currentUid, { ...currentLeader, ...profile, uid: currentUid });
   }
   return Array.from(merged.values())
     .filter((leader) => (leader.role || "student") === "student" || leader.uid === currentUid)
@@ -4362,6 +4442,9 @@ const NotebookPanel = forwardRef(function NotebookPanel(
     totalProblemCount,
     solvedIds = [],
     guidePenaltyRate,
+    timeLeft = 0,
+    timeLimit = 0,
+    timerActive = true,
     onAnswerCheck,
   },
   ref,
@@ -4603,9 +4686,7 @@ const NotebookPanel = forwardRef(function NotebookPanel(
     },
   }));
 
-  const solvedSet = new Set(solvedIds);
-  const selectableProblems = problems.filter((problem) => !solvedSet.has(problem.id));
-  const problemOptions = selectableProblems.length ? selectableProblems : problems;
+  const problemOptions = problems;
   const answerInputExample = getAnswerInputExample(selectedProblem);
 
   return (
@@ -4644,6 +4725,11 @@ const NotebookPanel = forwardRef(function NotebookPanel(
       <article className="problem-card">
         <div className="problem-card-meta">
           <span>{"★".repeat(selectedProblem?.difficulty || 1)}{"☆".repeat(Math.max(0, 5 - (selectedProblem?.difficulty || 1)))}</span>
+          {timerActive && (
+            <span className={`problem-timer ${timeLeft <= 10 ? "danger" : timeLeft <= 30 ? "warning" : ""}`}>
+              제한 {formatProblemTime(timeLeft)} / {formatProblemTime(timeLimit)}
+            </span>
+          )}
           {(() => {
             const baseXp = 30 + (selectedProblem?.difficulty || 1) * 10;
             const mult = Math.max(0.3, 1 - (guidePenaltyRate || 0));
