@@ -26,6 +26,7 @@ function buildCuratedProblem(skill, raw, n) {
   return {
     id: `p-${skill.id}-${String(n).padStart(2, "0")}`,
     nodeId: skill.id,
+    displayOrder: n,
     gradeBand: skill.stage.startsWith("중") ? "middle" : "high",
     source: "curated",
     sourceName: "교과서 기반 단원 문제",
@@ -104,11 +105,12 @@ function buildProblem(skill, sourceNumber, displayNumber = sourceNumber) {
   return {
     id: `p-${skill.id}-${String(sourceNumber).padStart(2, "0")}`,
     nodeId: skill.id,
+    displayOrder: displayNumber,
     gradeBand: skill.stage.startsWith("중") ? "middle" : "high",
     source: "built-in",
     sourceName: "내장 단원 문제은행",
     difficulty: Math.min(5, 1 + Math.floor((sourceNumber - 1) / 10)),
-    title: `${skill.title} ${sourceNumber}`,
+    title: `${skill.title} ${displayNumber}`,
     ...built,
     get hint() { return hint(skill, built); },
     get nextStep() { return next(skill, built); },

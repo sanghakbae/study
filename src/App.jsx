@@ -215,6 +215,8 @@ function getAnswerInputExample(problem) {
 }
 
 function getProblemOrder(problem) {
+  const displayOrder = Number(problem?.displayOrder);
+  if (Number.isFinite(displayOrder) && displayOrder > 0) return displayOrder;
   const match = String(problem.id || "").match(/-(\d+)$/);
   return match ? Number(match[1]) : Number.MAX_SAFE_INTEGER;
 }
