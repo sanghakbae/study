@@ -242,21 +242,9 @@ function getGuideFallback(actionKey, problem) {
     : "";
 }
 
-function getProblemOrderValue(problemOrId) {
-  const raw = typeof problemOrId === "string"
-    ? problemOrId
-    : `${problemOrId?.id || ""} ${problemOrId?.title || ""}`;
-  const match = String(raw).match(/(?:^|[-\s])0*(\d+)$/);
-  return match ? Number(match[1]) : null;
-}
-
 function isProblemSolved(problem, solvedIds = []) {
   if (!problem) return false;
-  const solved = new Set(solvedIds);
-  if (solved.has(problem.id)) return true;
-  const problemOrder = getProblemOrderValue(problem);
-  if (problemOrder == null) return false;
-  return solvedIds.some((solvedId) => getProblemOrderValue(solvedId) === problemOrder);
+  return new Set(solvedIds).has(problem.id);
 }
 
 function chooseProblemId({ problems, savedLocation, skillId, solvedIds = [] }) {
