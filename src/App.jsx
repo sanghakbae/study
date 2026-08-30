@@ -4823,7 +4823,7 @@ const NotebookPanel = forwardRef(function NotebookPanel(
   }
 
   function drawStroke(stroke) {
-    if (stroke.points.length < 2) return;
+    if (stroke.points.length < 1) return;
     const ctx = ctxRef.current;
     if (!ctx) return;
     ctx.save();
@@ -4832,10 +4832,27 @@ const NotebookPanel = forwardRef(function NotebookPanel(
     ctx.lineJoin = "round";
     ctx.strokeStyle = stroke.tool === "eraser" ? "rgba(0,0,0,1)" : "#111827";
     ctx.lineWidth = stroke.tool === "eraser" ? 30 : 3.5;
+    if (stroke.points.length === 1) {
+      drawPoint(stroke.points[0], stroke.tool);
+      ctx.restore();
+      return;
+    }
     ctx.beginPath();
     ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
     stroke.points.slice(1).forEach((point) => ctx.lineTo(point.x, point.y));
     ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawPoint(point, strokeTool) {
+    const ctx = ctxRef.current;
+    if (!ctx || !point) return;
+    ctx.save();
+    ctx.globalCompositeOperation = strokeTool === "eraser" ? "destination-out" : "source-over";
+    ctx.fillStyle = strokeTool === "eraser" ? "rgba(0,0,0,1)" : "#111827";
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, strokeTool === "eraser" ? 15 : 1.75, 0, Math.PI * 2);
+    ctx.fill();
     ctx.restore();
   }
 
@@ -4871,8 +4888,12 @@ const NotebookPanel = forwardRef(function NotebookPanel(
     redraw();
   }
 
+  function shouldIgnoreTouchDrawing(event) {
+    return event.pointerType === "touch" && !handModeRef.current && toolRef.current !== "eraser";
+  }
+
   function startDrawing(event) {
-    if (event.pointerType === "touch" && !handModeRef.current) return;
+    if (shouldIgnoreTouchDrawing(event)) return;
     if (!toolRef.current) return; // 펜·지우개가 모두 비활성이면 그리지 않음
     event.preventDefault();
     event.stopPropagation();
@@ -4883,11 +4904,16 @@ const NotebookPanel = forwardRef(function NotebookPanel(
     const point = getPoint(event);
     currentStrokeRef.current = [point];
     lastPointRef.current = point;
-    canvasRef.current.setPointerCapture(event.pointerId);
+    drawPoint(point, toolRef.current);
+    try {
+      canvasRef.current.setPointerCapture(event.pointerId);
+    } catch {
+      // Synthetic or some mobile PWA pointer streams may not allow capture.
+    }
   }
 
   function moveDrawing(event) {
-    if (event.pointerType === "touch" && !handModeRef.current) return;
+    if (shouldIgnoreTouchDrawing(event)) return;
     if (activePointerIdRef.current != null && event.pointerId !== activePointerIdRef.current) return;
     updateCursor(event);
     if (!drawingRef.current) return;
@@ -5015,7 +5041,10 @@ const NotebookPanel = forwardRef(function NotebookPanel(
           <PenLine size={17} />
           펜
         </button>
-        <button className={tool === "eraser" ? "active" : ""} onClick={() => setTool((t) => (t === "eraser" ? "" : "eraser"))}>
+        <button className={tool === "eraser" ? "active" : ""} onClick={() => {
+          setTool((t) => (t === "eraser" ? "" : "eraser"));
+          setHandMode(true);
+        }}>
           <Eraser size={17} />
           지우개
         </button>
