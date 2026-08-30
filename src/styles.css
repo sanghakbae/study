@@ -6795,8 +6795,8 @@ button.stat-pill:hover,
     flex: 0 1 112px;
     width: 112px !important;
     max-width: 112px !important;
-    height: 38px;
-    min-height: 38px;
+    height: 32px;
+    min-height: 32px;
     padding: 0 8px;
     font-size: 0.76rem !important;
     line-height: 1;
@@ -6805,7 +6805,8 @@ button.stat-pill:hover,
   .mobile-solve-toggle {
     width: 50px;
     min-width: 50px;
-    min-height: 38px;
+    height: 32px;
+    min-height: 32px;
     padding: 0 6px;
     font-size: 0.76rem;
   }
