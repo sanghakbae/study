@@ -6779,6 +6779,31 @@ button.stat-pill:hover,
     padding: 4px 0;
     margin-bottom: 2px;
   }
+
+  .problem-header-actions {
+    flex: 0 1 auto;
+    max-width: 56%;
+    gap: 6px;
+  }
+
+  .problem-header-actions select {
+    flex: 0 1 112px;
+    width: 112px !important;
+    max-width: 112px !important;
+    height: 38px;
+    min-height: 38px;
+    padding: 0 8px;
+    font-size: 18px !important;
+    line-height: 1;
+  }
+
+  .mobile-solve-toggle {
+    width: 50px;
+    min-width: 50px;
+    min-height: 38px;
+    padding: 0 6px;
+    font-size: 14px;
+  }
 }
 
 /* iPhone 등 모바일: 페이지 세로 스크롤 허용.
