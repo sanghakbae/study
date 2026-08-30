@@ -323,6 +323,16 @@ function clearPendingRole() {
   }
 }
 
+function rejectAfter(ms, code, message) {
+  return new Promise((_, reject) => {
+    window.setTimeout(() => {
+      const error = new Error(message);
+      error.code = code;
+      reject(error);
+    }, ms);
+  });
+}
+
 const GUIDE_STEPS = [
   {
     selector: ".skill-panel",
@@ -472,6 +482,7 @@ export default function App() {
   const [guide, setGuide] = useState("문제를 고르고 노트에 풀이를 시작하세요. 막히는 순간 오른쪽 버튼으로 힌트를 받을 수 있습니다.");
   const [guideLoading, setGuideLoading] = useState(false);
   const [pendingRole, setPendingRole] = useState(null);
+  const [loginBusyRole, setLoginBusyRole] = useState("");
   const [saving, setSaving] = useState(false);
   const [answerChecks, setAnswerChecks] = useState({});
   const [hintUsed, setHintUsed] = useState({});
@@ -843,20 +854,44 @@ export default function App() {
 
   async function handleLogin(role) {
     setPendingRole(role);
+    setLoginBusyRole(role);
+    setDataWarning("");
     try {
       if (shouldUseRedirectLogin()) {
         writePendingRole(role);
+        setDataWarning("Google 로그인 화면으로 이동 중입니다. 화면이 바뀌지 않으면 로그인 버튼을 한 번 더 눌러주세요.");
         await signInWithRedirect(auth, googleProvider);
       } else {
-        await signInWithPopup(auth, googleProvider);
+        await Promise.race([
+          signInWithPopup(auth, googleProvider),
+          rejectAfter(3500, "auth/popup-timeout", "Google 로그인 팝업이 열리지 않았습니다."),
+        ]);
       }
     } catch (error) {
+      const canFallbackToRedirect =
+        !shouldUseRedirectLogin() &&
+        ["auth/popup-timeout", "auth/popup-blocked", "auth/cancelled-popup-request", "auth/operation-not-supported-in-this-environment"].includes(error.code);
+      if (canFallbackToRedirect) {
+        try {
+          writePendingRole(role);
+          setDataWarning("팝업이 열리지 않아 Google 로그인 화면으로 이동합니다.");
+          await signInWithRedirect(auth, googleProvider);
+          return;
+        } catch (redirectError) {
+          error = redirectError;
+        }
+      }
       setPendingRole(null);
+      clearPendingRole();
       if (error.code === "auth/popup-blocked") {
         alert("팝업이 차단됐습니다.\n브라우저 주소창 오른쪽의 팝업 허용 아이콘을 클릭한 뒤 다시 시도해주세요.");
+      } else if (error.code === "auth/unauthorized-domain") {
+        alert("Google 로그인 실패: 현재 도메인이 Firebase 승인 도메인에 등록되어 있지 않습니다.");
       } else if (error.code !== "auth/popup-closed-by-user") {
         alert(`Google 로그인 실패: ${error.message}`);
       }
+    } finally {
+      setLoginBusyRole("");
     }
   }
 
@@ -1316,7 +1351,11 @@ export default function App() {
     return (
       <>
         {deployRefreshing && <DeployRefreshOverlay />}
-        {isManagerPath ? <ManagerLoginScreen onLogin={() => handleLogin("admin")} /> : <LoginScreen onLogin={handleLogin} />}
+        {isManagerPath ? (
+          <ManagerLoginScreen onLogin={() => handleLogin("admin")} loginBusy={loginBusyRole === "admin"} loginNotice={dataWarning} />
+        ) : (
+          <LoginScreen onLogin={handleLogin} loginBusyRole={loginBusyRole} loginNotice={dataWarning} />
+        )}
       </>
     );
   }
@@ -2231,7 +2270,7 @@ function getFallbackProblems(skill) {
   return getProblemsForSkill(skill);
 }
 
-function LoginScreen({ onLogin }) {
+function LoginScreen({ onLogin, loginBusyRole = "", loginNotice = "" }) {
   return (
     <main className="login-screen">
       <div className="login-art">
@@ -2242,22 +2281,23 @@ function LoginScreen({ onLogin }) {
           <h1>Study Math Arena</h1>
           <p>교과 흐름을 따라 스킬을 열고, 풀이 노트와 AI 튜터로 경쟁하는 수학 학습장.</p>
           <div className="role-grid">
-            <button onClick={() => onLogin("student")}>
-              <strong>학생</strong>
+            <button onClick={() => onLogin("student")} disabled={Boolean(loginBusyRole)}>
+              <strong>{loginBusyRole === "student" ? "로그인 이동 중..." : "학생"}</strong>
               <span>중1 과정부터 문제를 풀고 스킬, 랭킹, 마크를 획득합니다.</span>
             </button>
-            <button onClick={() => onLogin("parents")}>
-              <strong>학부모</strong>
+            <button onClick={() => onLogin("parents")} disabled={Boolean(loginBusyRole)}>
+              <strong>{loginBusyRole === "parents" ? "로그인 이동 중..." : "학부모"}</strong>
               <span>가입한 자녀를 조회해서 추가하고 학습 활동을 모니터링합니다.</span>
             </button>
           </div>
+          {loginNotice && <p className="login-notice">{loginNotice}</p>}
         </div>
       </div>
     </main>
   );
 }
 
-function ManagerLoginScreen({ onLogin }) {
+function ManagerLoginScreen({ onLogin, loginBusy = false, loginNotice = "" }) {
   return (
     <main className="login-screen">
       <div className="login-art">
@@ -2267,10 +2307,11 @@ function ManagerLoginScreen({ onLogin }) {
           </div>
           <h1>관리자 페이지 접속</h1>
           <p className="manager-warning">관리자만 접속이 가능합니다.</p>
-          <button className="google-button manager-google-button" onClick={onLogin}>
+          <button className="google-button manager-google-button" onClick={onLogin} disabled={loginBusy}>
             <UserRound size={16} />
-            Google 로그인
+            {loginBusy ? "로그인 이동 중..." : "Google 로그인"}
           </button>
+          {loginNotice && <p className="login-notice">{loginNotice}</p>}
         </div>
       </div>
     </main>

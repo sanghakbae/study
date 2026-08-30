@@ -3,6 +3,7 @@ import {
   browserLocalPersistence,
   browserPopupRedirectResolver,
   browserSessionPersistence,
+  getAuth,
   GoogleAuthProvider,
   indexedDBLocalPersistence,
   initializeAuth,
@@ -20,9 +21,16 @@ export const firebaseConfig = {
 };
 
 export const app = initializeApp(firebaseConfig);
-export const auth = initializeAuth(app, {
-  persistence: [indexedDBLocalPersistence, browserLocalPersistence, browserSessionPersistence],
-  popupRedirectResolver: browserPopupRedirectResolver,
-});
+let authInstance;
+try {
+  authInstance = initializeAuth(app, {
+    persistence: [indexedDBLocalPersistence, browserLocalPersistence, browserSessionPersistence],
+    popupRedirectResolver: browserPopupRedirectResolver,
+  });
+} catch {
+  authInstance = getAuth(app);
+}
+export const auth = authInstance;
 export const googleProvider = new GoogleAuthProvider();
+googleProvider.setCustomParameters({ prompt: "select_account" });
 export const db = getFirestore(app);
