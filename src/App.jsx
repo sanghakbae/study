@@ -509,11 +509,11 @@ export default function App() {
           return;
         }
         if (deployVersionRef.current !== nextVersion && !cancelled) {
-          setDeployRefreshing(true);
-          window.clearTimeout(reloadTimer);
-          reloadTimer = window.setTimeout(() => {
-            window.location.reload();
-          }, 1400);
+          // 자동 새로고침 금지(작성 중 입력 보호). 서비스워커 업데이트 확인만 요청한다.
+          deployVersionRef.current = nextVersion;
+          if ("serviceWorker" in navigator) {
+            navigator.serviceWorker.getRegistration().then((reg) => reg?.update()).catch(() => {});
+          }
         }
       } catch {
         // 배포 중 순간적인 404/네트워크 실패는 다음 주기에서 다시 확인한다.

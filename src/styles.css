@@ -7329,3 +7329,132 @@ button.stat-pill:hover,
   }
 }
 .onboarding-prev:hover { background: rgba(71,85,105,0.3); }
+
+/* ══ PWA: 입력칸 16px 하한(iOS 포커스 확대 방지) ══════════════════════════════ */
+/* 입력칸 전용 값. 이 값은 16px 미만으로 내리지 말 것. (scripts/check-input-font-size.mjs 로 고정) */
+:root {
+  --input-font-size: 16px;
+}
+/* 좁은 화면에서는 어떤 개별 규칙이 줄이더라도 폼 컨트롤을 16px 이상으로 강제한다.
+   데스크톱(≥769px)은 기존 크기를 유지하므로 관리자 테이블 등 밀도에 영향 없음. */
+@media (max-width: 768px) {
+  input,
+  select,
+  textarea {
+    font-size: var(--input-font-size) !important;
+  }
+}
+
+.pwa-update-banner {
+  position: fixed;
+  left: 50%;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: min(520px, calc(100vw - 24px));
+  padding: 12px 14px 12px 18px;
+  border-radius: 14px;
+  background: #0f172a;
+  color: #f8fafc;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  box-shadow: 0 12px 40px rgba(2, 6, 23, 0.45);
+  animation: pwaSlideUp 0.25s ease;
+}
+
+@keyframes pwaSlideUp {
+  from { transform: translate(-50%, 16px); opacity: 0; }
+  to { transform: translate(-50%, 0); opacity: 1; }
+}
+
+.pwa-update-text {
+  font-size: 0.92rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.pwa-update-btn {
+  flex: 0 0 auto;
+  height: 38px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 10px;
+  background: #22c55e;
+  color: #052e16;
+  font-size: 0.9rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.pwa-update-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.pwa-ios-banner {
+  position: fixed;
+  left: 50%;
+  bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  z-index: 1990;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: calc(100vw - 20px);
+  max-width: 460px;
+  padding: 14px 40px 14px 14px;
+  border-radius: 16px;
+  background: #ffffff;
+  color: #0f172a;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 16px 44px rgba(15, 23, 42, 0.22);
+  animation: pwaSlideUp 0.25s ease;
+}
+
+.pwa-ios-icon {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  border-radius: 10px;
+  background: #f1f5f9;
+}
+
+.pwa-ios-body strong {
+  display: block;
+  font-size: 0.95rem;
+  font-weight: 800;
+  margin-bottom: 3px;
+}
+
+.pwa-ios-body p {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: #475569;
+}
+
+.pwa-ios-body svg {
+  vertical-align: -4px;
+  margin: 0 1px;
+}
+
+.pwa-ios-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 15px;
+  cursor: pointer;
+}
+.pwa-ios-close:hover { background: #f1f5f9; color: #475569; }
