@@ -37,6 +37,7 @@ import {
 import {
   getRedirectResult,
   onAuthStateChanged,
+  signInWithPopup,
   signInWithRedirect,
   signOut,
 } from "firebase/auth";
@@ -1008,8 +1009,22 @@ export default function App() {
         setDataWarning("");
         return;
       }
-      setDataWarning("Google 로그인 화면으로 이동 중입니다.");
-      await signInWithRedirect(auth, googleProvider);
+      setDataWarning("Google 로그인 창을 여는 중입니다.");
+      try {
+        await signInWithPopup(auth, googleProvider);
+      } catch (popupError) {
+        if (
+          popupError.code === "auth/popup-blocked" ||
+          popupError.code === "auth/popup-closed-by-user" ||
+          popupError.code === "auth/operation-not-supported-in-this-environment"
+        ) {
+          if (popupError.code === "auth/popup-closed-by-user") throw popupError;
+          setDataWarning("Google 로그인 화면으로 이동 중입니다.");
+          await signInWithRedirect(auth, googleProvider);
+        } else {
+          throw popupError;
+        }
+      }
     } catch (error) {
       setPendingRole(null);
       pendingLoginRoleRef.current = "";
@@ -2440,8 +2455,6 @@ function PrivacyFooter() {
   return (
     <footer className="privacy-footer" aria-label="개인정보처리방침">
       <a href="/privacy">개인정보처리방침</a>
-      <span>개인정보 보호책임자: 배상학</span>
-      <a href="mailto:bae@sanghak.kr">bae@sanghak.kr</a>
     </footer>
   );
 }
