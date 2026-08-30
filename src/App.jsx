@@ -503,6 +503,7 @@ export default function App() {
   const deployVersionRef = useRef("");
   const auditLoginRef = useRef("");
   const parentViewAuditRef = useRef("");
+  const pendingLoginRoleRef = useRef("");
   const examSubmitLockRef = useRef(false);
   const savingProblemIdsRef = useRef(new Set());
   const examAvailabilityRef = useRef(null);
@@ -570,8 +571,8 @@ export default function App() {
     // PWA redirect 후 pendingRole 복원
     const savedRole = readPendingRole();
     if (savedRole) {
+      pendingLoginRoleRef.current = savedRole;
       setPendingRole(savedRole);
-      clearPendingRole();
     }
     return onAuthStateChanged(auth, async (nextUser) => {
       setAuthReady(false);
@@ -587,7 +588,22 @@ export default function App() {
           solvedCount: 0,
         });
         try {
-          const nextProfile = await ensureUserProfile(nextUser);
+          let nextProfile = await ensureUserProfile(nextUser);
+          const selectedLoginRole = pendingLoginRoleRef.current || readPendingRole();
+          if (["student", "parents"].includes(selectedLoginRole) && !nextProfile.onboardingComplete && nextProfile.role !== "admin") {
+            const selectedGrade = nextProfile.grade || "중1";
+            await completeOnboarding({ user: nextUser, role: selectedLoginRole, grade: selectedGrade });
+            nextProfile = {
+              ...nextProfile,
+              role: selectedLoginRole,
+              grade: selectedLoginRole === "student" ? selectedGrade : "",
+              parentOf: selectedLoginRole === "parents" ? nextProfile.parentOf || [] : [],
+              onboardingComplete: true,
+            };
+            pendingLoginRoleRef.current = "";
+            setPendingRole(null);
+            clearPendingRole();
+          }
           setProfile((current) => ({ ...current, ...nextProfile }));
           const loginAuditKey = `${nextUser.uid}:${Number(nextUser.metadata?.lastSignInTime ? new Date(nextUser.metadata.lastSignInTime).getTime() : Date.now())}`;
           if (auditLoginRef.current !== loginAuditKey) {
@@ -828,6 +844,7 @@ export default function App() {
 
   async function handleLogin(role) {
     setPendingRole(role);
+    pendingLoginRoleRef.current = role;
     setLoginBusyRole(role);
     setDataWarning("");
     try {
@@ -836,6 +853,7 @@ export default function App() {
       await signInWithRedirect(auth, googleProvider);
     } catch (error) {
       setPendingRole(null);
+      pendingLoginRoleRef.current = "";
       clearPendingRole();
       if (error.code === "auth/unauthorized-domain") {
         alert("Google 로그인 실패: 현재 도메인이 Firebase 승인 도메인에 등록되어 있지 않습니다.");
