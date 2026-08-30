@@ -34,7 +34,7 @@ import {
   Users,
   Wand2,
 } from "lucide-react";
-import { onAuthStateChanged, signInWithRedirect, getRedirectResult, signOut } from "firebase/auth";
+import { getRedirectResult, onAuthStateChanged, signInWithPopup, signInWithRedirect, signOut } from "firebase/auth";
 import { auth, googleProvider } from "./firebase";
 import {
   completeOnboarding,
@@ -610,31 +610,44 @@ export default function App() {
       setAuthReady(false);
       setUser(nextUser);
       if (nextUser) {
-        setProfile({
+        const selectedLoginRole = pendingLoginRoleRef.current || readPendingRole();
+        const fallbackRole = nextUser.email === "totoriverce@gmail.com" ? "admin" : selectedLoginRole || "student";
+        let nextProfile = {
           uid: nextUser.uid,
           displayName: nextUser.displayName || "수학 러너",
           photoURL: nextUser.photoURL || "",
           email: nextUser.email || "",
-          role: nextUser.email === "totoriverce@gmail.com" ? "admin" : "student",
+          role: fallbackRole,
+          grade: fallbackRole === "student" ? "중1" : "",
+          parentOf: [],
+          onboardingComplete: true,
           xp: 0,
           solvedCount: 0,
-        });
+        };
+        setProfile(nextProfile);
         try {
-          let nextProfile = await ensureUserProfile(nextUser);
-          const selectedLoginRole =
-            pendingLoginRoleRef.current ||
-            readPendingRole() ||
-            (!nextProfile.onboardingComplete && nextProfile.role !== "admin" ? normalizeLoginRole(nextProfile.role) || "student" : "");
-          if (["student", "parents"].includes(selectedLoginRole) && !nextProfile.onboardingComplete && nextProfile.role !== "admin") {
+          const loadedProfile = await ensureUserProfile(nextUser);
+          const resolvedLoginRole =
+            selectedLoginRole ||
+            (!loadedProfile.onboardingComplete && loadedProfile.role !== "admin" ? normalizeLoginRole(loadedProfile.role) || "student" : "");
+          nextProfile = {
+            ...nextProfile,
+            ...loadedProfile,
+            role: nextUser.email === "totoriverce@gmail.com" ? "admin" : loadedProfile.role || nextProfile.role,
+          };
+          if (["student", "parents"].includes(resolvedLoginRole) && !nextProfile.onboardingComplete && nextProfile.role !== "admin") {
             const selectedGrade = nextProfile.grade || "중1";
-            await completeOnboarding({ user: nextUser, role: selectedLoginRole, grade: selectedGrade });
             nextProfile = {
               ...nextProfile,
-              role: selectedLoginRole,
-              grade: selectedLoginRole === "student" ? selectedGrade : "",
-              parentOf: selectedLoginRole === "parents" ? nextProfile.parentOf || [] : [],
+              role: resolvedLoginRole,
+              grade: resolvedLoginRole === "student" ? selectedGrade : "",
+              parentOf: resolvedLoginRole === "parents" ? nextProfile.parentOf || [] : [],
               onboardingComplete: true,
             };
+            completeOnboarding({ user: nextUser, role: resolvedLoginRole, grade: selectedGrade }).catch((error) => {
+              console.error("Onboarding save failed:", error);
+              setDataWarning(`프로필 저장 실패: ${error.message}`);
+            });
             pendingLoginRoleRef.current = "";
             setPendingRole(null);
             clearPendingRole();
@@ -676,7 +689,8 @@ export default function App() {
           });
         } catch (error) {
           console.error(error);
-          setDataWarning(`Firestore 연결/권한 확인 필요: ${error.message}`);
+          setProfile((current) => ({ ...current, ...nextProfile, onboardingComplete: true }));
+          setDataWarning(`로그인은 완료됐지만 학습 데이터 동기화 실패: ${error.message}`);
         }
       } else {
         setSolvedBySkill({});
@@ -869,6 +883,15 @@ export default function App() {
     });
   }, [profile.role, profile.parentOf, user]);
 
+  const shouldUseRedirectLogin = () =>
+    typeof window !== "undefined" &&
+    (
+      window.navigator.standalone === true ||
+      window.matchMedia?.("(display-mode: standalone)").matches ||
+      window.matchMedia?.("(display-mode: fullscreen)").matches ||
+      window.matchMedia?.("(display-mode: minimal-ui)").matches
+    );
+
   // PWA/모바일 redirect 후 돌아왔을 때 결과 처리
   useEffect(() => {
     getRedirectResult(auth).catch((error) => {
@@ -884,15 +907,22 @@ export default function App() {
     setDataWarning("");
     try {
       writePendingRole(role);
-      setDataWarning("Google 로그인 화면으로 이동 중입니다. 화면이 바뀌지 않으면 브라우저 새로고침 후 다시 눌러주세요.");
-      await signInWithRedirect(auth, googleProvider);
+      if (shouldUseRedirectLogin()) {
+        setDataWarning("Google 로그인 화면으로 이동 중입니다. 화면이 바뀌지 않으면 앱을 완전히 종료한 뒤 다시 열어주세요.");
+        await signInWithRedirect(auth, googleProvider);
+      } else {
+        setDataWarning("Google 로그인 창을 여는 중입니다.");
+        await signInWithPopup(auth, googleProvider);
+      }
     } catch (error) {
       setPendingRole(null);
       pendingLoginRoleRef.current = "";
       clearPendingRole();
-      if (error.code === "auth/unauthorized-domain") {
+      if (error.code === "auth/popup-blocked") {
+        alert("Google 로그인 팝업이 차단됐습니다. 브라우저에서 팝업을 허용한 뒤 다시 시도해주세요.");
+      } else if (error.code === "auth/unauthorized-domain") {
         alert("Google 로그인 실패: 현재 도메인이 Firebase 승인 도메인에 등록되어 있지 않습니다.");
-      } else {
+      } else if (error.code !== "auth/popup-closed-by-user") {
         alert(`Google 로그인 실패: ${error.message}`);
       }
     } finally {
