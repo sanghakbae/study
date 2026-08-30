@@ -287,6 +287,41 @@ function DeployRefreshOverlay() {
 }
 
 const ONBOARDING_KEY = "onboarding_done_v1";
+const PENDING_ROLE_KEY = "pendingRole";
+
+function readPendingRole() {
+  try {
+    return sessionStorage.getItem(PENDING_ROLE_KEY) || localStorage.getItem(PENDING_ROLE_KEY);
+  } catch {
+    return "";
+  }
+}
+
+function writePendingRole(role) {
+  try {
+    sessionStorage.setItem(PENDING_ROLE_KEY, role);
+  } catch {
+    // Storage may be unavailable in strict mobile browser modes.
+  }
+  try {
+    localStorage.setItem(PENDING_ROLE_KEY, role);
+  } catch {
+    // Storage may be unavailable in strict mobile browser modes.
+  }
+}
+
+function clearPendingRole() {
+  try {
+    sessionStorage.removeItem(PENDING_ROLE_KEY);
+  } catch {
+    // Ignore storage failures.
+  }
+  try {
+    localStorage.removeItem(PENDING_ROLE_KEY);
+  } catch {
+    // Ignore storage failures.
+  }
+}
 
 const GUIDE_STEPS = [
   {
@@ -531,11 +566,11 @@ export default function App() {
 
   useEffect(() => {
     localStorage.removeItem("study-note-ratio");
-    // iOS PWA redirect 후 pendingRole 복원
-    const savedRole = sessionStorage.getItem("pendingRole");
+    // PWA redirect 후 pendingRole 복원
+    const savedRole = readPendingRole();
     if (savedRole) {
       setPendingRole(savedRole);
-      sessionStorage.removeItem("pendingRole");
+      clearPendingRole();
     }
     return onAuthStateChanged(auth, async (nextUser) => {
       setAuthReady(false);
@@ -782,23 +817,35 @@ export default function App() {
     });
   }, [profile.role, profile.parentOf, user]);
 
-  const isIosPwa = () =>
+  const isStandaloneApp = () =>
     typeof window !== "undefined" &&
-    window.navigator.standalone === true &&
-    /iphone|ipad|ipod/i.test(navigator.userAgent);
+    (
+      window.navigator.standalone === true ||
+      window.matchMedia?.("(display-mode: standalone)").matches ||
+      window.matchMedia?.("(display-mode: fullscreen)").matches ||
+      window.matchMedia?.("(display-mode: minimal-ui)").matches
+    );
 
-  // iOS PWA에서 redirect 후 돌아왔을 때 결과 처리
+  const shouldUseRedirectLogin = () => {
+    if (typeof window === "undefined") return false;
+    const ua = window.navigator.userAgent || "";
+    const isAppleTouch = /iphone|ipad|ipod/i.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    return isStandaloneApp() || isAppleTouch;
+  };
+
+  // PWA/모바일 redirect 후 돌아왔을 때 결과 처리
   useEffect(() => {
-    if (!isIosPwa()) return;
-    getRedirectResult(auth).catch(() => {});
+    getRedirectResult(auth).catch((error) => {
+      console.error("Redirect login failed:", error);
+      setDataWarning(`Google 로그인 처리 실패: ${error.message}`);
+    });
   }, []);
 
   async function handleLogin(role) {
     setPendingRole(role);
     try {
-      if (isIosPwa()) {
-        // iOS PWA: 팝업 대신 redirect 사용 (sessionStorage 문제 우회)
-        sessionStorage.setItem("pendingRole", role);
+      if (shouldUseRedirectLogin()) {
+        writePendingRole(role);
         await signInWithRedirect(auth, googleProvider);
       } else {
         await signInWithPopup(auth, googleProvider);

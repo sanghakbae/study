@@ -56,6 +56,9 @@ self.addEventListener("fetch", (event) => {
   // 배포 버전 신호는 항상 네트워크(캐시 금지).
   if (url.pathname === "/deploy-version.json") return;
 
+  // Firebase Auth redirect/popup helper는 서비스워커가 절대 가로채지 않는다.
+  if (url.pathname.startsWith("/__/auth/")) return;
+
   // 페이지 이동: 네트워크 우선, 실패하면 캐시된 셸로 오프라인 실행.
   if (request.mode === "navigate") {
     event.respondWith(

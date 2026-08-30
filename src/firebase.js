@@ -1,5 +1,12 @@
 import { initializeApp } from "firebase/app";
-import { getAuth, GoogleAuthProvider } from "firebase/auth";
+import {
+  browserLocalPersistence,
+  browserPopupRedirectResolver,
+  browserSessionPersistence,
+  GoogleAuthProvider,
+  indexedDBLocalPersistence,
+  initializeAuth,
+} from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 export const firebaseConfig = {
@@ -13,6 +20,9 @@ export const firebaseConfig = {
 };
 
 export const app = initializeApp(firebaseConfig);
-export const auth = getAuth(app);
+export const auth = initializeAuth(app, {
+  persistence: [indexedDBLocalPersistence, browserLocalPersistence, browserSessionPersistence],
+  popupRedirectResolver: browserPopupRedirectResolver,
+});
 export const googleProvider = new GoogleAuthProvider();
 export const db = getFirestore(app);
