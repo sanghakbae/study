@@ -2447,11 +2447,20 @@ function PrivacyFooter() {
 }
 
 function PrivacyPolicyPage() {
+  function closePrivacyPage() {
+    window.location.href = "/";
+  }
+
   return (
     <main className="privacy-page">
       <article className="privacy-policy">
         <div className="privacy-policy-head">
-          <a href="/" className="privacy-back">Study Math Arena</a>
+          <div className="privacy-policy-nav">
+            <a href="/" className="privacy-back">Study Math Arena</a>
+            <button type="button" className="privacy-close" onClick={closePrivacyPage} aria-label="개인정보처리방침 닫기">
+              <X size={20} aria-hidden="true" />
+            </button>
+          </div>
           <h1>개인정보처리방침</h1>
           <p>Study Math Arena는 학습 서비스 제공을 위해 필요한 최소한의 개인정보를 처리합니다.</p>
         </div>

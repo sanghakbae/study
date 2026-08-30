@@ -1100,12 +1100,37 @@ button:disabled {
   margin-bottom: 20px;
 }
 
+.privacy-policy-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 10px;
+}
+
 .privacy-back {
   display: inline-flex;
-  margin-bottom: 10px;
   color: #2563eb;
   font-weight: 900;
   text-decoration: none;
+}
+
+.privacy-close {
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #111827;
+  cursor: pointer;
+}
+
+.privacy-close:hover,
+.privacy-close:focus-visible {
+  border-color: #94a3b8;
+  background: #f8fafc;
 }
 
 .privacy-policy h1 {
