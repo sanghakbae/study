@@ -4,13 +4,12 @@ import { getFirestore } from "firebase/firestore";
 
 const firebaseAuthDomain = (() => {
   if (typeof window === "undefined") return "study-1b905.firebaseapp.com";
-  const { hostname, host, protocol } = window.location;
-  const isLocal =
-    hostname === "localhost" ||
-    hostname === "127.0.0.1" ||
-    hostname === "0.0.0.0" ||
-    hostname.endsWith(".local");
-  return protocol === "https:" && !isLocal ? host : "study-1b905.firebaseapp.com";
+  const isStandalone =
+    window.navigator.standalone === true ||
+    window.matchMedia?.("(display-mode: standalone)").matches ||
+    window.matchMedia?.("(display-mode: fullscreen)").matches ||
+    window.matchMedia?.("(display-mode: minimal-ui)").matches;
+  return isStandalone && window.location.protocol === "https:" ? window.location.host : "study-1b905.firebaseapp.com";
 })();
 
 export const firebaseConfig = {
