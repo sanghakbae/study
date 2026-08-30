@@ -4965,6 +4965,28 @@ const NotebookPanel = forwardRef(function NotebookPanel(
     if (!drawingRef.current) document.body.classList.remove("drawing-on-canvas");
   }
 
+  function setToolMode(nextTool) {
+    toolRef.current = nextTool;
+    setTool(nextTool);
+    hideCursor();
+  }
+
+  function togglePenTool() {
+    setToolMode(toolRef.current === "pen" ? "" : "pen");
+  }
+
+  function toggleEraserTool() {
+    setToolMode(toolRef.current === "eraser" ? "" : "eraser");
+    handModeRef.current = true;
+    setHandMode(true);
+  }
+
+  function toggleHandMode() {
+    const nextHandMode = !handModeRef.current;
+    handModeRef.current = nextHandMode;
+    setHandMode(nextHandMode);
+  }
+
   useImperativeHandle(ref, () => ({
     exportStrokes: () => strokesRef.current,
     getStrokeSummary: () => `${strokesRef.current.length}개 획으로 풀이 작성`,
@@ -5037,14 +5059,11 @@ const NotebookPanel = forwardRef(function NotebookPanel(
 
       <div className="solve-workspace">
       <div className="tool-row">
-        <button className={tool === "pen" ? "active" : ""} onClick={() => setTool((t) => (t === "pen" ? "" : "pen"))}>
+        <button className={tool === "pen" ? "active" : ""} onClick={togglePenTool}>
           <PenLine size={17} />
           펜
         </button>
-        <button className={tool === "eraser" ? "active" : ""} onClick={() => {
-          setTool((t) => (t === "eraser" ? "" : "eraser"));
-          setHandMode(true);
-        }}>
+        <button className={tool === "eraser" ? "active" : ""} onClick={toggleEraserTool}>
           <Eraser size={17} />
           지우개
         </button>
@@ -5054,7 +5073,7 @@ const NotebookPanel = forwardRef(function NotebookPanel(
         </button>
         <button
           className={`hand-toggle ${handMode ? "active" : ""}`}
-          onClick={() => setHandMode((prev) => !prev)}
+          onClick={toggleHandMode}
           title={handMode ? "손글씨 켜짐: 손가락으로 바로 쓸 수 있어요" : "손글씨 끄기: 손가락 글씨를 막아요"}
           aria-pressed={handMode}
         >
