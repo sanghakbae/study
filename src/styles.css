@@ -4172,6 +4172,11 @@ li:nth-child(3) .rank-num { color: #b45309; }
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 
+.answer-input-row input::placeholder {
+  font-size: 0.82em;
+  font-weight: 700;
+}
+
 .answer-input-row input:focus {
   outline: none;
   border-color: #38bdf8;
