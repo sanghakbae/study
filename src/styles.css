@@ -3992,7 +3992,7 @@ li:nth-child(3) .rank-num { color: #b45309; }
   flex-direction: row;
   justify-content: flex-start;
   gap: 2px;
-  padding: 3px 3.2px;
+  padding: 1.5px 3.2px;
   min-height: 0;
   border-radius: 5px;
   font-size: 0.68rem;
@@ -6793,7 +6793,7 @@ button.stat-pill:hover,
     height: 38px;
     min-height: 38px;
     padding: 0 8px;
-    font-size: 18px !important;
+    font-size: 0.76rem !important;
     line-height: 1;
   }
 
@@ -6802,7 +6802,13 @@ button.stat-pill:hover,
     min-width: 50px;
     min-height: 38px;
     padding: 0 6px;
-    font-size: 14px;
+    font-size: 0.76rem;
+  }
+
+  .guide-actions button {
+    min-height: 30px;
+    padding-top: 1.5px;
+    padding-bottom: 1.5px;
   }
 }
 
