@@ -2,9 +2,20 @@ import { initializeApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
+const firebaseAuthDomain = (() => {
+  if (typeof window === "undefined") return "study-1b905.firebaseapp.com";
+  const { hostname, host, protocol } = window.location;
+  const isLocal =
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname === "0.0.0.0" ||
+    hostname.endsWith(".local");
+  return protocol === "https:" && !isLocal ? host : "study-1b905.firebaseapp.com";
+})();
+
 export const firebaseConfig = {
   apiKey: "AIzaSyBo8Vkv0U9XLggRF95e-Qes4A4TSfe2VPQ",
-  authDomain: "study-1b905.firebaseapp.com",
+  authDomain: firebaseAuthDomain,
   projectId: "study-1b905",
   storageBucket: "study-1b905.firebasestorage.app",
   messagingSenderId: "977103150404",
