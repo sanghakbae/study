@@ -626,7 +626,7 @@ export default function App() {
         };
         setProfile(nextProfile);
         try {
-          const loadedProfile = await ensureUserProfile(nextUser);
+          const loadedProfile = await ensureUserProfile(nextUser, selectedLoginRole);
           const resolvedLoginRole =
             selectedLoginRole ||
             (!loadedProfile.onboardingComplete && loadedProfile.role !== "admin" ? normalizeLoginRole(loadedProfile.role) || "student" : "");
@@ -652,7 +652,7 @@ export default function App() {
             setPendingRole(null);
             clearPendingRole();
           }
-          setProfile((current) => ({ ...current, ...nextProfile }));
+          setProfile((current) => ({ ...current, ...nextProfile, onboardingComplete: true }));
           const loginAuditKey = `${nextUser.uid}:${Number(nextUser.metadata?.lastSignInTime ? new Date(nextUser.metadata.lastSignInTime).getTime() : Date.now())}`;
           if (auditLoginRef.current !== loginAuditKey) {
             auditLoginRef.current = loginAuditKey;
@@ -815,7 +815,7 @@ export default function App() {
     if (loadedSkills.length) setSkills(sortSkillsByCurriculumOrder(loadedSkills));
     setLeaderboard(loadedLeaders.filter((u) => u.role === "student" && u.onboardingComplete && !u.isMock));
     let me = loadedLeaders.find((item) => item.uid === uid);
-    if (me) setProfile(me);
+    if (me) setProfile((current) => ({ ...current, ...me, onboardingComplete: true }));
     const mergedSolved = studyProgress.solvedBySkill || {};
     setSolvedBySkill(mergedSolved);
     solvedBySkillRef.current = mergedSolved;
@@ -1400,15 +1400,6 @@ export default function App() {
       <>
         {deployRefreshing && <DeployRefreshOverlay />}
         <ManagerAccessDenied user={user} onLogout={handleDeniedLogout} />
-      </>
-    );
-  }
-
-  if (!profile.onboardingComplete && profile.role !== "admin") {
-    return (
-      <>
-        {deployRefreshing && <DeployRefreshOverlay />}
-        <OnboardingPage user={user} profile={profile} initialRole={pendingRole} onComplete={handleCompleteOnboarding} />
       </>
     );
   }

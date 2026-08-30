@@ -20,11 +20,12 @@ import { db } from "../firebase";
 import { curriculumNodes } from "../data/curriculum";
 import { generatedProblems } from "../data/problemBank";
 
-export async function ensureUserProfile(user) {
+export async function ensureUserProfile(user, preferredRole = "") {
   const ref = doc(db, "users", user.uid);
   const snap = await getDoc(ref);
-  const role = user.email === "totoriverce@gmail.com" ? "admin" : "student";
-  const isAdmin = role === "admin";
+  const selectedRole = ["student", "parents"].includes(preferredRole) ? preferredRole : "";
+  const defaultRole = user.email === "totoriverce@gmail.com" ? "admin" : selectedRole || "student";
+  const isAdmin = defaultRole === "admin";
   let isNewUser = false;
   let profile;
   if (!snap.exists()) {
@@ -34,10 +35,10 @@ export async function ensureUserProfile(user) {
       displayName: user.displayName || "수학 러너",
       photoURL: user.photoURL || "",
       email: user.email || "",
-      role,
-      grade: "",
+      role: defaultRole,
+      grade: defaultRole === "student" ? "중1" : "",
       parentOf: [],
-      onboardingComplete: isAdmin,
+      onboardingComplete: true,
       xp: 0,
       solvedCount: 0,
       masteredSkills: [],
@@ -52,12 +53,18 @@ export async function ensureUserProfile(user) {
     };
     await setDoc(ref, profile);
   } else {
+    const existingProfile = snap.data();
+    const existingRole = existingProfile.role || defaultRole;
+    const nextRole = isAdmin ? "admin" : existingRole;
     const patch = {
       lastSeenAt: serverTimestamp(),
-      ...(isAdmin ? { role: "admin", onboardingComplete: true } : {}),
+      ...(isAdmin ? { role: "admin" } : {}),
+      ...(!isAdmin && selectedRole && !existingProfile.onboardingComplete ? { role: selectedRole } : {}),
+      ...(!existingProfile.onboardingComplete ? { onboardingComplete: true } : {}),
+      ...(!existingProfile.grade && (selectedRole || nextRole) === "student" ? { grade: "중1" } : {}),
     };
     await updateDoc(ref, patch);
-    profile = { ...snap.data(), ...(isAdmin ? { role: "admin", onboardingComplete: true } : {}) };
+    profile = { ...existingProfile, ...patch, role: patch.role || nextRole, onboardingComplete: true };
   }
   return { ...profile, isNewUser };
 }
