@@ -34,7 +34,7 @@ import {
   Users,
   Wand2,
 } from "lucide-react";
-import { onAuthStateChanged, signInWithPopup, signInWithRedirect, getRedirectResult, signOut } from "firebase/auth";
+import { onAuthStateChanged, signInWithRedirect, getRedirectResult, signOut } from "firebase/auth";
 import { auth, googleProvider } from "./firebase";
 import {
   completeOnboarding,
@@ -321,16 +321,6 @@ function clearPendingRole() {
   } catch {
     // Ignore storage failures.
   }
-}
-
-function rejectAfter(ms, code, message) {
-  return new Promise((_, reject) => {
-    window.setTimeout(() => {
-      const error = new Error(message);
-      error.code = code;
-      reject(error);
-    }, ms);
-  });
 }
 
 const GUIDE_STEPS = [
@@ -828,22 +818,6 @@ export default function App() {
     });
   }, [profile.role, profile.parentOf, user]);
 
-  const isStandaloneApp = () =>
-    typeof window !== "undefined" &&
-    (
-      window.navigator.standalone === true ||
-      window.matchMedia?.("(display-mode: standalone)").matches ||
-      window.matchMedia?.("(display-mode: fullscreen)").matches ||
-      window.matchMedia?.("(display-mode: minimal-ui)").matches
-    );
-
-  const shouldUseRedirectLogin = () => {
-    if (typeof window === "undefined") return false;
-    const ua = window.navigator.userAgent || "";
-    const isAppleTouch = /iphone|ipad|ipod/i.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-    return isStandaloneApp() || isAppleTouch;
-  };
-
   // PWA/모바일 redirect 후 돌아왔을 때 결과 처리
   useEffect(() => {
     getRedirectResult(auth).catch((error) => {
@@ -857,37 +831,15 @@ export default function App() {
     setLoginBusyRole(role);
     setDataWarning("");
     try {
-      if (shouldUseRedirectLogin()) {
-        writePendingRole(role);
-        setDataWarning("Google 로그인 화면으로 이동 중입니다. 화면이 바뀌지 않으면 로그인 버튼을 한 번 더 눌러주세요.");
-        await signInWithRedirect(auth, googleProvider);
-      } else {
-        await Promise.race([
-          signInWithPopup(auth, googleProvider),
-          rejectAfter(3500, "auth/popup-timeout", "Google 로그인 팝업이 열리지 않았습니다."),
-        ]);
-      }
+      writePendingRole(role);
+      setDataWarning("Google 로그인 화면으로 이동 중입니다. 화면이 바뀌지 않으면 브라우저 새로고침 후 다시 눌러주세요.");
+      await signInWithRedirect(auth, googleProvider);
     } catch (error) {
-      const canFallbackToRedirect =
-        !shouldUseRedirectLogin() &&
-        ["auth/popup-timeout", "auth/popup-blocked", "auth/cancelled-popup-request", "auth/operation-not-supported-in-this-environment"].includes(error.code);
-      if (canFallbackToRedirect) {
-        try {
-          writePendingRole(role);
-          setDataWarning("팝업이 열리지 않아 Google 로그인 화면으로 이동합니다.");
-          await signInWithRedirect(auth, googleProvider);
-          return;
-        } catch (redirectError) {
-          error = redirectError;
-        }
-      }
       setPendingRole(null);
       clearPendingRole();
-      if (error.code === "auth/popup-blocked") {
-        alert("팝업이 차단됐습니다.\n브라우저 주소창 오른쪽의 팝업 허용 아이콘을 클릭한 뒤 다시 시도해주세요.");
-      } else if (error.code === "auth/unauthorized-domain") {
+      if (error.code === "auth/unauthorized-domain") {
         alert("Google 로그인 실패: 현재 도메인이 Firebase 승인 도메인에 등록되어 있지 않습니다.");
-      } else if (error.code !== "auth/popup-closed-by-user") {
+      } else {
         alert(`Google 로그인 실패: ${error.message}`);
       }
     } finally {
