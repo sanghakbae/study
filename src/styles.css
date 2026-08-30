@@ -6,6 +6,9 @@
     sans-serif;
   background: #eef2f7;
   color: #111827;
+  --app-page-padding: 10px;
+  --app-safe-top: max(var(--app-page-padding), calc(env(safe-area-inset-top, 0px) + var(--app-page-padding)));
+  --app-safe-bottom: max(32px, calc(env(safe-area-inset-bottom, 0px) + 24px));
 }
 
 * {
@@ -350,7 +353,7 @@ button:disabled {
   display: grid;
   grid-template-rows: auto minmax(190px, 30vh) minmax(0, 1fr);
   gap: 10px;
-  padding: 10px;
+  padding: var(--app-safe-top) var(--app-page-padding) var(--app-page-padding);
   overflow: hidden;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(238, 242, 247, 0.96)),
@@ -4993,7 +4996,7 @@ li:nth-child(3) .rank-num { color: #b45309; }
     width: 100%;
     min-height: 100svh;
     min-height: 100dvh;
-    padding: 16px;
+    padding: var(--app-safe-top) 16px max(16px, env(safe-area-inset-bottom, 0px));
     place-items: center;
   }
 
@@ -5030,8 +5033,8 @@ li:nth-child(3) .rank-num { color: #b45309; }
     gap: 2px;
     overflow: visible;
     overflow-x: hidden;
-    padding: 8px;
-    padding-bottom: max(32px, calc(env(safe-area-inset-bottom, 0px) + 24px));
+    --app-page-padding: 8px;
+    padding: var(--app-safe-top) var(--app-page-padding) var(--app-safe-bottom);
   }
 
   .topbar,
@@ -6744,7 +6747,8 @@ button.stat-pill:hover,
 
 @media (max-width: 720px) {
   .app-shell {
-    padding: 8px;
+    --app-page-padding: 8px;
+    padding: var(--app-safe-top) var(--app-page-padding) var(--app-safe-bottom);
     gap: 8px;
   }
 
