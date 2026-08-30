@@ -288,25 +288,48 @@ function DeployRefreshOverlay() {
 
 const ONBOARDING_KEY = "onboarding_done_v1";
 const PENDING_ROLE_KEY = "pendingRole";
+const LOGIN_ROLE_PARAM = "loginRole";
 
-function readPendingRole() {
+function normalizeLoginRole(role) {
+  return ["student", "parents"].includes(role) ? role : "";
+}
+
+function readLoginRoleFromUrl() {
+  if (typeof window === "undefined") return "";
   try {
-    return sessionStorage.getItem(PENDING_ROLE_KEY) || localStorage.getItem(PENDING_ROLE_KEY);
+    return normalizeLoginRole(new URL(window.location.href).searchParams.get(LOGIN_ROLE_PARAM) || "");
   } catch {
     return "";
   }
 }
 
-function writePendingRole(role) {
+function readPendingRole() {
   try {
-    sessionStorage.setItem(PENDING_ROLE_KEY, role);
+    return normalizeLoginRole(sessionStorage.getItem(PENDING_ROLE_KEY) || localStorage.getItem(PENDING_ROLE_KEY) || "") || readLoginRoleFromUrl();
+  } catch {
+    return readLoginRoleFromUrl();
+  }
+}
+
+function writePendingRole(role) {
+  const loginRole = normalizeLoginRole(role);
+  if (!loginRole) return;
+  try {
+    sessionStorage.setItem(PENDING_ROLE_KEY, loginRole);
   } catch {
     // Storage may be unavailable in strict mobile browser modes.
   }
   try {
-    localStorage.setItem(PENDING_ROLE_KEY, role);
+    localStorage.setItem(PENDING_ROLE_KEY, loginRole);
   } catch {
     // Storage may be unavailable in strict mobile browser modes.
+  }
+  try {
+    const url = new URL(window.location.href);
+    url.searchParams.set(LOGIN_ROLE_PARAM, loginRole);
+    window.history.replaceState(window.history.state, "", url);
+  } catch {
+    // URL changes may be blocked in restricted embedded browsers.
   }
 }
 
@@ -320,6 +343,15 @@ function clearPendingRole() {
     localStorage.removeItem(PENDING_ROLE_KEY);
   } catch {
     // Ignore storage failures.
+  }
+  try {
+    const url = new URL(window.location.href);
+    if (url.searchParams.has(LOGIN_ROLE_PARAM)) {
+      url.searchParams.delete(LOGIN_ROLE_PARAM);
+      window.history.replaceState(window.history.state, "", url);
+    }
+  } catch {
+    // Ignore URL cleanup failures.
   }
 }
 
@@ -589,7 +621,10 @@ export default function App() {
         });
         try {
           let nextProfile = await ensureUserProfile(nextUser);
-          const selectedLoginRole = pendingLoginRoleRef.current || readPendingRole();
+          const selectedLoginRole =
+            pendingLoginRoleRef.current ||
+            readPendingRole() ||
+            (!nextProfile.onboardingComplete && nextProfile.role !== "admin" ? normalizeLoginRole(nextProfile.role) || "student" : "");
           if (["student", "parents"].includes(selectedLoginRole) && !nextProfile.onboardingComplete && nextProfile.role !== "admin") {
             const selectedGrade = nextProfile.grade || "중1";
             await completeOnboarding({ user: nextUser, role: selectedLoginRole, grade: selectedGrade });
