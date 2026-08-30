@@ -653,6 +653,11 @@ export default function App() {
             clearPendingRole();
           }
           setProfile((current) => ({ ...current, ...nextProfile, onboardingComplete: true }));
+          if (selectedLoginRole) {
+            pendingLoginRoleRef.current = "";
+            setPendingRole(null);
+            clearPendingRole();
+          }
           const loginAuditKey = `${nextUser.uid}:${Number(nextUser.metadata?.lastSignInTime ? new Date(nextUser.metadata.lastSignInTime).getTime() : Date.now())}`;
           if (auditLoginRef.current !== loginAuditKey) {
             auditLoginRef.current = loginAuditKey;
@@ -690,6 +695,9 @@ export default function App() {
         } catch (error) {
           console.error(error);
           setProfile((current) => ({ ...current, ...nextProfile, onboardingComplete: true }));
+          pendingLoginRoleRef.current = "";
+          setPendingRole(null);
+          clearPendingRole();
           setDataWarning(`로그인은 완료됐지만 학습 데이터 동기화 실패: ${error.message}`);
         }
       } else {
@@ -908,7 +916,7 @@ export default function App() {
     try {
       writePendingRole(role);
       if (shouldUseRedirectLogin()) {
-        setDataWarning("Google 로그인 화면으로 이동 중입니다. 화면이 바뀌지 않으면 앱을 완전히 종료한 뒤 다시 열어주세요.");
+        setDataWarning("Google 로그인 화면으로 이동 중입니다.");
         await signInWithRedirect(auth, googleProvider);
       } else {
         setDataWarning("Google 로그인 창을 여는 중입니다.");
@@ -1605,6 +1613,7 @@ export default function App() {
           ))}
         </div>
       </section>
+      <PrivacyFooter />
     </main>
   );
 }
@@ -1900,6 +1909,7 @@ function AdminPage({ user, profile, members, attempts, auditLogs, aiUsageLogs, o
           <AdminLearningDashboard members={members} attempts={attempts} />
         )}
       </section>
+      <PrivacyFooter />
     </main>
   );
 }
@@ -1953,6 +1963,7 @@ function ParentPage({ user, profile, members, attempts, leaders, onRegisterChild
         />
       </section>
       <LearningPrintReports students={children} attempts={reportAttempts} allStudents={students} />
+      <PrivacyFooter />
     </main>
   );
 }
@@ -2296,6 +2307,19 @@ function getFallbackProblems(skill) {
   return getProblemsForSkill(skill);
 }
 
+function PrivacyFooter() {
+  return (
+    <footer className="privacy-footer" aria-label="개인정보처리방침">
+      <strong>개인정보처리방침</strong>
+      <span>수집 항목: Google 계정 이메일, 이름, 프로필 사진, 학습 기록, XP, 오답 및 도움 사용 기록</span>
+      <span>이용 목적: 회원 식별, 학습 진행 관리, 랭킹 및 리포트 제공</span>
+      <span>보관 기간: 회원 탈퇴 또는 삭제 요청 시까지</span>
+      <span>개인정보 보호책임자: 배상학</span>
+      <a href="mailto:bae@sanghak.kr">bae@sanghak.kr</a>
+    </footer>
+  );
+}
+
 function LoginScreen({ onLogin, loginBusyRole = "", loginNotice = "" }) {
   return (
     <main className="login-screen">
@@ -2319,6 +2343,7 @@ function LoginScreen({ onLogin, loginBusyRole = "", loginNotice = "" }) {
           {loginNotice && <p className="login-notice">{loginNotice}</p>}
         </div>
       </div>
+      <PrivacyFooter />
     </main>
   );
 }
@@ -2340,6 +2365,7 @@ function ManagerLoginScreen({ onLogin, loginBusy = false, loginNotice = "" }) {
           {loginNotice && <p className="login-notice">{loginNotice}</p>}
         </div>
       </div>
+      <PrivacyFooter />
     </main>
   );
 }
@@ -2359,6 +2385,7 @@ function ManagerAccessDenied({ user, onLogout }) {
           </button>
         </div>
       </div>
+      <PrivacyFooter />
     </main>
   );
 }

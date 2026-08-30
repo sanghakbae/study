@@ -1029,8 +1029,51 @@ button:disabled {
 .topbar,
 .dashboard-strip,
 .workspace,
-.source-band {
+.source-band,
+.privacy-footer {
   width: 100%;
+}
+
+.privacy-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px 12px;
+  padding: 8px 10px;
+  border: 1px solid #d8dee8;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.86);
+  color: #475569;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  text-align: center;
+}
+
+.privacy-footer strong {
+  color: #111827;
+}
+
+.privacy-footer a {
+  color: #2563eb;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.login-screen .privacy-footer {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  width: auto;
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(15, 23, 42, 0.74);
+  color: #cbd5e1;
+  backdrop-filter: blur(12px);
+}
+
+.login-screen .privacy-footer strong {
+  color: #ffffff;
 }
 
 .topbar {
