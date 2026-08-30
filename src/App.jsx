@@ -34,7 +34,12 @@ import {
   Users,
   Wand2,
 } from "lucide-react";
-import { getRedirectResult, onAuthStateChanged, signInWithPopup, signInWithRedirect, signOut } from "firebase/auth";
+import {
+  getRedirectResult,
+  onAuthStateChanged,
+  signInWithRedirect,
+  signOut,
+} from "firebase/auth";
 import { auth, googleProvider } from "./firebase";
 import {
   completeOnboarding,
@@ -82,6 +87,15 @@ const fallbackUser = {
   role: "student",
   xp: 0,
   solvedCount: 0,
+};
+
+const localDevUser = {
+  uid: "KvGcYNGkDvStXNA9o1rwH7TnSyy1",
+  displayName: "배상학",
+  photoURL: "https://lh3.googleusercontent.com/a/ACg8ocLxlOi634l19hcN5fzbJc2ii1TwdMb7tyfplyIzswGFD6cFnViK=s96-c",
+  email: "shbae@muhayu.com",
+  metadata: {},
+  isLocalDevUser: true,
 };
 
 const guideActions = [
@@ -288,6 +302,7 @@ function DeployRefreshOverlay() {
 
 const ONBOARDING_KEY = "onboarding_done_v1";
 const PENDING_ROLE_KEY = "pendingRole";
+const LOCAL_DEV_SESSION_KEY = "study-local-dev-session";
 const LOGIN_ROLE_PARAM = "loginRole";
 
 function normalizeLoginRole(role) {
@@ -352,6 +367,50 @@ function clearPendingRole() {
     }
   } catch {
     // Ignore URL cleanup failures.
+  }
+}
+
+function isLocalhost() {
+  return typeof window !== "undefined" && window.location.hostname === "localhost";
+}
+
+function buildLocalDevProfile(role = "student") {
+  return {
+    ...fallbackUser,
+    uid: localDevUser.uid,
+    displayName: localDevUser.displayName,
+    photoURL: localDevUser.photoURL,
+    email: localDevUser.email,
+    role,
+    grade: role === "student" ? "고1" : "",
+    parentOf: [],
+    onboardingComplete: true,
+  };
+}
+
+function readLocalDevRole() {
+  if (!isLocalhost()) return "";
+  try {
+    return normalizeLoginRole(localStorage.getItem(LOCAL_DEV_SESSION_KEY) || "");
+  } catch {
+    return "";
+  }
+}
+
+function writeLocalDevRole(role) {
+  if (!isLocalhost()) return;
+  try {
+    localStorage.setItem(LOCAL_DEV_SESSION_KEY, normalizeLoginRole(role) || "student");
+  } catch {
+    // Ignore storage failures in local QA.
+  }
+}
+
+function clearLocalDevRole() {
+  try {
+    localStorage.removeItem(LOCAL_DEV_SESSION_KEY);
+  } catch {
+    // Ignore storage failures in local QA.
   }
 }
 
@@ -485,6 +544,7 @@ function OnboardingGuide({ onDone }) {
 export default function App() {
   const normalizedPath = window.location.pathname.replace(/\/+$/, "") || "/";
   const isManagerPath = normalizedPath === "/manager" || normalizedPath === "/admin";
+  const isPrivacyPath = normalizedPath === "/privacy";
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(fallbackUser);
   const [authReady, setAuthReady] = useState(false);
@@ -600,13 +660,39 @@ export default function App() {
 
   useEffect(() => {
     localStorage.removeItem("study-note-ratio");
+    const localDevRole = readLocalDevRole();
+    if (localDevRole) {
+      const nextProfile = buildLocalDevProfile(localDevRole);
+      setUser(localDevUser);
+      setProfile(nextProfile);
+      setSolvedBySkill({});
+      solvedBySkillRef.current = {};
+      setSelectedSkillId(defaultSkillId);
+      setSelectedProblemId(defaultProblemId);
+      setAuthReady(true);
+      return () => {};
+    }
     // PWA redirect 후 pendingRole 복원
     const savedRole = readPendingRole();
     if (savedRole) {
       pendingLoginRoleRef.current = savedRole;
       setPendingRole(savedRole);
     }
-    return onAuthStateChanged(auth, async (nextUser) => {
+    let cancelled = false;
+    let unsubscribeAuth = () => {};
+
+    async function startAuthListener() {
+      try {
+        await getRedirectResult(auth);
+      } catch (error) {
+        console.error("Redirect login failed:", error);
+        pendingLoginRoleRef.current = "";
+        setPendingRole(null);
+        clearPendingRole();
+        setDataWarning(`Google 로그인 처리 실패: ${error.message}`);
+      }
+      if (cancelled) return;
+      unsubscribeAuth = onAuthStateChanged(auth, async (nextUser) => {
       setAuthReady(false);
       setUser(nextUser);
       if (nextUser) {
@@ -707,7 +793,14 @@ export default function App() {
         parentViewAuditRef.current = "";
       }
       setAuthReady(true);
-    });
+      });
+    }
+
+    startAuthListener();
+    return () => {
+      cancelled = true;
+      unsubscribeAuth();
+    };
   }, []);
 
   async function notifyFirstLogin(nextUser, nextProfile) {
@@ -773,6 +866,7 @@ export default function App() {
 
   useEffect(() => {
     if (!authReady || !user || !selectedSkillId || !selectedProblemId) return;
+    if (user.isLocalDevUser) return;
     const selected = problems.find((problem) => problem.id === selectedProblemId);
     if (isProblemSolved(selected, solvedBySkill[selectedSkillId] || [])) {
       return;
@@ -885,28 +979,12 @@ export default function App() {
 
   useEffect(() => {
     if (!user || !["admin", "parents"].includes(profile.role)) return;
+    if (user.isLocalDevUser) return;
     refreshMembers().catch((error) => {
       console.error(error);
       setDataWarning(`회원/학습 기록 권한 확인 필요: ${error.message}`);
     });
   }, [profile.role, profile.parentOf, user]);
-
-  const shouldUseRedirectLogin = () =>
-    typeof window !== "undefined" &&
-    (
-      window.navigator.standalone === true ||
-      window.matchMedia?.("(display-mode: standalone)").matches ||
-      window.matchMedia?.("(display-mode: fullscreen)").matches ||
-      window.matchMedia?.("(display-mode: minimal-ui)").matches
-    );
-
-  // PWA/모바일 redirect 후 돌아왔을 때 결과 처리
-  useEffect(() => {
-    getRedirectResult(auth).catch((error) => {
-      console.error("Redirect login failed:", error);
-      setDataWarning(`Google 로그인 처리 실패: ${error.message}`);
-    });
-  }, []);
 
   async function handleLogin(role) {
     setPendingRole(role);
@@ -915,23 +993,35 @@ export default function App() {
     setDataWarning("");
     try {
       writePendingRole(role);
-      if (shouldUseRedirectLogin()) {
-        setDataWarning("Google 로그인 화면으로 이동 중입니다.");
-        await signInWithRedirect(auth, googleProvider);
-      } else {
-        setDataWarning("Google 로그인 창을 여는 중입니다.");
-        await signInWithPopup(auth, googleProvider);
+      if (isLocalhost()) {
+        const nextProfile = buildLocalDevProfile(role);
+        writeLocalDevRole(role);
+        setUser(localDevUser);
+        setProfile(nextProfile);
+        setSolvedBySkill({});
+        solvedBySkillRef.current = {};
+        setSelectedSkillId(defaultSkillId);
+        setSelectedProblemId(defaultProblemId);
+        pendingLoginRoleRef.current = "";
+        setPendingRole(null);
+        clearPendingRole();
+        setDataWarning("");
+        return;
       }
+      setDataWarning("Google 로그인 화면으로 이동 중입니다.");
+      await signInWithRedirect(auth, googleProvider);
     } catch (error) {
       setPendingRole(null);
       pendingLoginRoleRef.current = "";
       clearPendingRole();
       if (error.code === "auth/popup-blocked") {
-        alert("Google 로그인 팝업이 차단됐습니다. 브라우저에서 팝업을 허용한 뒤 다시 시도해주세요.");
+        setDataWarning("Google 로그인 팝업이 차단됐습니다. 브라우저에서 팝업을 허용한 뒤 다시 시도해주세요.");
       } else if (error.code === "auth/unauthorized-domain") {
-        alert("Google 로그인 실패: 현재 도메인이 Firebase 승인 도메인에 등록되어 있지 않습니다.");
+        setDataWarning("Google 로그인 실패: 현재 도메인이 Firebase 승인 도메인에 등록되어 있지 않습니다.");
+      } else if (error.code === "auth/popup-closed-by-user") {
+        setDataWarning("Google 로그인 창이 닫혀 로그인이 완료되지 않았습니다.");
       } else if (error.code !== "auth/popup-closed-by-user") {
-        alert(`Google 로그인 실패: ${error.message}`);
+        setDataWarning(`Google 로그인 실패: ${error.message}`);
       }
     } finally {
       setLoginBusyRole("");
@@ -940,6 +1030,14 @@ export default function App() {
 
   async function handleLogout() {
     const currentUser = auth.currentUser || user;
+    if (currentUser?.isLocalDevUser) {
+      clearLocalDevRole();
+      setUser(null);
+      setProfile(fallbackUser);
+      setSolvedBySkill({});
+      setHintUsed({});
+      return;
+    }
     if (currentUser) {
       try {
         await saveAuditLog({
@@ -979,16 +1077,20 @@ export default function App() {
       parentOf: role === "parents" ? profile.parentOf || [] : [],
       onboardingComplete: true,
     };
-    await completeOnboarding({ user, role, grade });
+    if (!user.isLocalDevUser) {
+      await completeOnboarding({ user, role, grade });
+    }
     setProfile(nextProfile);
-    await refreshCatalog();
+    if (!user.isLocalDevUser) {
+      await refreshCatalog();
+    }
     if (["admin", "parents"].includes(nextProfile.role)) {
       await refreshMembers(nextProfile);
     }
   }
 
   async function handleDismissLoginGuide() {
-    if (guideSuppressChecked && user) {
+    if (guideSuppressChecked && user && !user.isLocalDevUser) {
       try {
         await suppressLoginGuideForSevenDays(user.uid);
         setProfile((current) => ({ ...current, loginGuideDismissUntil: Date.now() + 7 * 24 * 60 * 60 * 1000 }));
@@ -1015,7 +1117,7 @@ export default function App() {
       if (used.includes(actionKey)) return current;
       return { ...current, [problemId]: [...used, actionKey] };
     });
-    if (!user || !nodeId) return;
+    if (!user || !nodeId || user.isLocalDevUser) return;
     markGuideHelpUsed({ uid: user.uid, nodeId, problemId, actionKey }).catch((error) => {
       console.error(error);
       setDataWarning(`힌트 사용 기록 저장 실패: ${error.message}`);
@@ -1116,6 +1218,7 @@ export default function App() {
     const ok = await runAiGuide(action);
     if (ok) {
       setReviewCounts((current) => ({ ...current, [reviewKey]: 1 }));
+      if (user.isLocalDevUser) return;
       markAiGuideUsed({ uid: user.uid, problemId: reviewKey }).catch((error) => {
         console.error(error);
         setDataWarning(`AI 가이드 사용 기록 저장 실패: ${error.message}`);
@@ -1175,6 +1278,27 @@ export default function App() {
     const xpMultiplier = Math.max(0.3, 1 - guidePenaltyRate);
 
     try {
+      if (user.isLocalDevUser) {
+        const baseXp = alreadySolved ? 0 : 30 + Number(problem.difficulty || 1) * 10;
+        const xpGain = Math.round(baseXp * xpMultiplier);
+        if (xpGain) {
+          setProfile((current) => ({
+            ...current,
+            xp: (Number(current.xp) || 0) + xpGain,
+            solvedCount: (Number(current.solvedCount) || 0) + 1,
+          }));
+        }
+        markProblemCompleted(problem.id, problem.nodeId);
+        advanceToNextProblem(problem.id, problem.nodeId);
+        if (completedSkillReward) {
+          setAcquiredSkill(completedSkillReward);
+          if (completedSkillReward.bonus) {
+            setProfile((current) => ({ ...current, xp: (Number(current.xp) || 0) + completedSkillReward.bonus }));
+          }
+        }
+        return;
+      }
+
       const result = await saveAttempt({
         user,
         problem,
@@ -1236,6 +1360,7 @@ export default function App() {
       pendingSync: true,
     };
     setActivityAttempts((current) => [localWrongAttempt, ...current]);
+    if (user.isLocalDevUser) return;
     try {
       await saveAttempt({
         user,
@@ -1379,6 +1504,10 @@ export default function App() {
     setSelectedSkillId(nodeId);
     setSelectedProblemId(problemId);
     setWrongNotebookModalOpen(false);
+  }
+
+  if (isPrivacyPath) {
+    return <PrivacyPolicyPage />;
   }
 
   if (!authReady) {
@@ -2186,7 +2315,7 @@ function LoginGuideModal({ suppressChecked, onSuppressChange, onClose }) {
           <GuideStep
             type="helper"
             title="3. 막히면 도움 받기"
-            body="개념 학습은 기본 제공이라 언제든 무료예요. 풀이 방향·힌트를 쓰면 받을 XP가 5%씩 줄어요."
+            body="개념 학습은 기본 제공이라 언제든 무료예요. 힌트는 받을 XP가 20%, 풀이 방향은 50% 줄어요."
           />
         </div>
 
@@ -2310,13 +2439,88 @@ function getFallbackProblems(skill) {
 function PrivacyFooter() {
   return (
     <footer className="privacy-footer" aria-label="개인정보처리방침">
-      <strong>개인정보처리방침</strong>
-      <span>수집 항목: Google 계정 이메일, 이름, 프로필 사진, 학습 기록, XP, 오답 및 도움 사용 기록</span>
-      <span>이용 목적: 회원 식별, 학습 진행 관리, 랭킹 및 리포트 제공</span>
-      <span>보관 기간: 회원 탈퇴 또는 삭제 요청 시까지</span>
+      <a href="/privacy">개인정보처리방침</a>
       <span>개인정보 보호책임자: 배상학</span>
       <a href="mailto:bae@sanghak.kr">bae@sanghak.kr</a>
     </footer>
+  );
+}
+
+function PrivacyPolicyPage() {
+  return (
+    <main className="privacy-page">
+      <article className="privacy-policy">
+        <div className="privacy-policy-head">
+          <a href="/" className="privacy-back">Study Math Arena</a>
+          <h1>개인정보처리방침</h1>
+          <p>Study Math Arena는 학습 서비스 제공을 위해 필요한 최소한의 개인정보를 처리합니다.</p>
+        </div>
+
+        <section>
+          <h2>1. 개인정보의 처리 목적</h2>
+          <p>서비스는 다음 목적을 위해 개인정보를 처리합니다.</p>
+          <ul>
+            <li>Google 계정을 이용한 회원 식별 및 로그인</li>
+            <li>학생 학습 진행 상황, XP, 랭킹, 오답노트, 도움 사용 기록 관리</li>
+            <li>학부모의 자녀 학습 현황 조회 및 리포트 제공</li>
+            <li>관리자 페이지를 통한 회원, 문제, 감사 로그, AI 사용량 관리</li>
+          </ul>
+        </section>
+
+        <section>
+          <h2>2. 처리하는 개인정보 항목</h2>
+          <ul>
+            <li>필수 항목: 이름, 이메일 주소, Google 프로필 사진, Google 계정 식별자</li>
+            <li>학습 정보: 학년, XP, 해결 문제 수, 정답 및 오답 기록, 스킬 완료 기록, 힌트 및 풀이 방향 사용 기록</li>
+            <li>서비스 이용 기록: 로그인 기록, 관리자 작업 기록, AI 사용량 기록</li>
+          </ul>
+        </section>
+
+        <section>
+          <h2>3. 개인정보의 보유 및 이용 기간</h2>
+          <p>개인정보는 회원 탈퇴, 서비스 이용 종료, 또는 삭제 요청 시까지 보관합니다. 법령에 따라 보관이 필요한 정보는 해당 법령에서 정한 기간 동안 보관할 수 있습니다.</p>
+        </section>
+
+        <section>
+          <h2>4. 개인정보의 제3자 제공</h2>
+          <p>서비스는 이용자의 개인정보를 원칙적으로 외부에 제공하지 않습니다. 다만 법령에 따른 요청이 있거나 이용자가 사전에 동의한 경우에는 예외로 합니다.</p>
+        </section>
+
+        <section>
+          <h2>5. 개인정보 처리 위탁 및 외부 서비스</h2>
+          <p>서비스 운영을 위해 Google Firebase Authentication, Cloud Firestore, Google 로그인 서비스를 사용합니다. 해당 서비스는 로그인, 데이터 저장, 학습 기록 동기화를 위해 필요한 범위에서 이용됩니다.</p>
+        </section>
+
+        <section>
+          <h2>6. 개인정보의 파기</h2>
+          <p>보유 기간이 지나거나 처리 목적이 달성된 개인정보는 지체 없이 파기합니다. 전자적 파일 형태의 정보는 복구할 수 없는 방법으로 삭제합니다.</p>
+        </section>
+
+        <section>
+          <h2>7. 이용자의 권리</h2>
+          <p>이용자는 자신의 개인정보 열람, 정정, 삭제, 처리 정지를 요청할 수 있습니다. 요청은 아래 개인정보 보호책임자 연락처로 접수할 수 있습니다.</p>
+        </section>
+
+        <section>
+          <h2>8. 개인정보 보호책임자</h2>
+          <dl className="privacy-contact">
+            <div>
+              <dt>책임자</dt>
+              <dd>배상학</dd>
+            </div>
+            <div>
+              <dt>연락처</dt>
+              <dd><a href="mailto:bae@sanghak.kr">bae@sanghak.kr</a></dd>
+            </div>
+          </dl>
+        </section>
+
+        <section>
+          <h2>9. 시행일</h2>
+          <p>이 개인정보처리방침은 2026년 8월 30일부터 적용됩니다.</p>
+        </section>
+      </article>
+    </main>
   );
 }
 

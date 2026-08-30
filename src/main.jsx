@@ -1,4 +1,4 @@
-import { Component, StrictMode } from "react";
+import { Component } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App.jsx";
 import PwaBanners from "./PwaBanners.jsx";
@@ -37,12 +37,10 @@ class RootErrorBoundary extends Component {
 }
 
 createRoot(document.getElementById("root")).render(
-  <StrictMode>
-    <RootErrorBoundary>
-      <App />
-      <PwaBanners />
-    </RootErrorBoundary>
-  </StrictMode>,
+  <RootErrorBoundary>
+    <App />
+    <PwaBanners />
+  </RootErrorBoundary>,
 );
 
 registerSW();

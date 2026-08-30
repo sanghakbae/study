@@ -1,0 +1,8 @@
+/__/auth/handler
+  Content-Type: text/html; charset=utf-8
+
+/__/auth/iframe
+  Content-Type: text/html; charset=utf-8
+
+/__/auth/links
+  Content-Type: text/html; charset=utf-8

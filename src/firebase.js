@@ -1,9 +1,17 @@
-import { initializeApp } from "firebase/app";
-import { getAuth, GoogleAuthProvider } from "firebase/auth";
+import { getApps, initializeApp } from "firebase/app";
+import {
+  browserLocalPersistence,
+  browserPopupRedirectResolver,
+  browserSessionPersistence,
+  getAuth,
+  GoogleAuthProvider,
+  indexedDBLocalPersistence,
+  initializeAuth,
+} from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
-const appHost = typeof window !== "undefined" ? window.location.hostname : "";
-const authDomain = appHost === "study.sanghak.kr" ? "study.sanghak.kr" : "study-1b905.firebaseapp.com";
+const customAuthDomain = import.meta.env.VITE_FIREBASE_AUTH_DOMAIN;
+const authDomain = customAuthDomain || "study-1b905.firebaseapp.com";
 
 export const firebaseConfig = {
   apiKey: "AIzaSyBo8Vkv0U9XLggRF95e-Qes4A4TSfe2VPQ",
@@ -15,8 +23,20 @@ export const firebaseConfig = {
   measurementId: "G-ZBTK4RP245",
 };
 
-export const app = initializeApp(firebaseConfig);
-export const auth = getAuth(app);
+export const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
+
+function getAuthInstance() {
+  try {
+    return initializeAuth(app, {
+      persistence: [indexedDBLocalPersistence, browserLocalPersistence, browserSessionPersistence],
+      popupRedirectResolver: browserPopupRedirectResolver,
+    });
+  } catch {
+    return getAuth(app);
+  }
+}
+
+export const auth = getAuthInstance();
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: "select_account" });
 export const db = getFirestore(app);
